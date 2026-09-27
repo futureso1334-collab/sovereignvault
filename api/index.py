@@ -71,8 +71,12 @@ def index():
                 textarea { width: 100%; height: 95px; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical; }
                 
                 .file-upload { border: 2px dashed var(--border-color); border-radius: 6px; padding: 12px; text-align: center; margin-top: 10px; background: var(--bg-color); }
+                .file-input-wrapper { display: flex; align-items: center; gap: 8px; justify-content: center; }
                 input[type="text"], input[type="file"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 13px; }
                 
+                .btn-clear-file { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: none; align-items: center; gap: 4px; }
+                .btn-clear-file:hover { background: #fecaca; }
+
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
                 
@@ -104,8 +108,11 @@ def index():
                         <textarea name="payload" id="payload-input" placeholder="Enter or paste your corporate data here..."></textarea>
                         
                         <div class="file-upload">
-                            <span style="font-size: 12px; color: var(--subtext-color);">📁 Or Upload Batch File (.txt/.csv):</span><br><br>
-                            <input type="file" name="batch_file" id="batch-file" style="font-size: 12px;" onchange="handleFileSelect(event)">
+                            <span style="font-size: 12px; color: var(--subtext-color);">📁 Upload Batch File (.txt/.csv):</span><br><br>
+                            <div class="file-input-wrapper">
+                                <input type="file" name="batch_file" id="batch-file" style="font-size: 12px;" onchange="handleFileSelect(event)">
+                                <button type="button" id="clear-file-btn" class="btn-clear-file" onclick="clearFileSelection()">✕ Remove</button>
+                            </div>
                         </div>
 
                         <label style="margin-top: 14px; display: block; margin-bottom: 6px;">Custom Restricted Term Rule:</label>
@@ -147,13 +154,21 @@ def index():
 
                 function handleFileSelect(event) {
                     const file = event.target.files[0];
+                    const clearBtn = document.getElementById('clear-file-btn');
                     if (file) {
+                        clearBtn.style.display = 'inline-flex';
                         const reader = new FileReader();
                         reader.onload = function(e) {
                             document.getElementById('payload-input').value = e.target.result;
                         };
                         reader.readAsText(file);
                     }
+                }
+
+                function clearFileSelection() {
+                    const fileInput = document.getElementById('batch-file');
+                    fileInput.value = '';
+                    document.getElementById('clear-file-btn').style.display = 'none';
                 }
 
                 function copyResult() {
