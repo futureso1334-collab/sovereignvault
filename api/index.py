@@ -99,9 +99,9 @@ def index():
                     <div class="card">
                         <div class="card-header-row">
                             <label>Raw Corporate Data Input:</label>
-                            <span class="badge-pii">⚠️ 4 PII Threat(s)</span>
+                            <span class="badge-pii" id="pii-badge">Ready for Input</span>
                         </div>
-                        <textarea name="payload" id="payload-input">Invoice for Vikram Malhotra, PAN: ABCDE5678G, Aadhaar: 4321 8765 1234, Email: vikram.m@fintechcorp.in, Mobile: +919876543210</textarea>
+                        <textarea name="payload" id="payload-input" placeholder="Enter or paste your corporate data here..."></textarea>
                         
                         <div class="file-upload">
                             <span style="font-size: 12px; color: var(--subtext-color);">📁 Or Upload Batch File (.txt/.csv):</span><br><br>
@@ -141,7 +141,6 @@ def index():
                     }
                 }
                 
-                // Load saved theme preference
                 if (localStorage.getItem('theme') === 'dark') {
                     document.getElementById('html-root').setAttribute('data-theme', 'dark');
                 }
@@ -222,12 +221,11 @@ def view_audit_logs():
 
 @app.route('/api/index', methods=['POST'])
 def secure_vault():
-    # Handle file upload if present
     uploaded_file = request.files.get('batch_file')
     if uploaded_file and uploaded_file.filename != '':
         payload = uploaded_file.read().decode('utf-8', errors='ignore')
     else:
-        payload = request.form.get('payload', 'Sample Data')
+        payload = request.form.get('payload', '')
 
     rule = request.form.get('rule', 'None')
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
