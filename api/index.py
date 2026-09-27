@@ -3,6 +3,7 @@ import sqlite3
 import hashlib
 import json
 import os
+import re
 from datetime import datetime
 
 app = Flask(__name__)
@@ -28,6 +29,16 @@ def init_db():
         print(f"DB Init Error: {e}")
 
 init_db()
+
+def mask_pii(text):
+    """Automatically masks emails, phone numbers, and Indian PAN numbers for clean room safety."""
+    # Mask Emails
+    text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
+    # Mask Phone Numbers (10-digit or international with +)
+    text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
+    # Mask PAN Numbers (e.g., ABCDE1234F)
+    text = re.sub(r'[A-Z]{5}[0-9]{4}[A-Z]{1}', '[PAN_REDACTED]', text)
+    return text
 
 @app.route('/')
 def index():
@@ -103,7 +114,7 @@ def index():
                     <div class="card">
                         <div class="card-header-row">
                             <label>Raw Corporate Data Input:</label>
-                            <span class="badge-pii" id="pii-badge">Ready for Input</span>
+                            <span class="badge-pii" id="pii-badge">Auto-Redact Active</span>
                         </div>
                         <textarea name="payload" id="payload-input" placeholder="Enter or paste your corporate data here..."></textarea>
                         
@@ -238,20 +249,23 @@ def view_audit_logs():
 def secure_vault():
     uploaded_file = request.files.get('batch_file')
     if uploaded_file and uploaded_file.filename != '':
-        payload = uploaded_file.read().decode('utf-8', errors='ignore')
+        raw_payload = uploaded_file.read().decode('utf-8', errors='ignore')
     else:
-        payload = request.form.get('payload', '')
+        raw_payload = request.form.get('payload', '')
+
+    # Automatically sanitize and mask PII
+    sanitized_payload = mask_pii(raw_payload)
 
     rule = request.form.get('rule', 'None')
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     
-    payload_hash = hashlib.sha256(payload.encode()).hexdigest()
+    payload_hash = hashlib.sha256(raw_payload.encode()).hexdigest()
     vector_embedding = [round(float(ord(c)) / 255.0, 4) for c in payload_hash[:16]]
     
     response_data = {
         "ai_executive_summary": "Enterprise Clean Room Protocol Executed Successfully. PII Redacted & Vectorized.",
         "checksum_sha256": payload_hash,
-        "sanitized_content": payload,
+        "sanitized_content": sanitized_payload,
         "active_rule": rule if rule else "None",
         "status": "SUCCESS (Clean Room Verified)",
         "timestamp": timestamp,
@@ -264,7 +278,7 @@ def secure_vault():
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
         cursor.execute("INSERT INTO audit_logs (timestamp, payload, hash_val, result_json) VALUES (?, ?, ?, ?)", 
-                       (timestamp, payload, payload_hash, pretty_json))
+                       (timestamp, raw_payload, payload_hash, pretty_json))
         conn.commit()
         conn.close()
     except Exception as e:
