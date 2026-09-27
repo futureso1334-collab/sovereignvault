@@ -33,37 +33,53 @@ init_db()
 def index():
     return render_template_string('''
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="en" id="html-root">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>SovereignVault AI</title>
             <style>
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }
-                .container { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
+                :root {
+                    --bg-color: #f4f6f8;
+                    --card-bg: #ffffff;
+                    --text-color: #212529;
+                    --subtext-color: #64748b;
+                    --border-color: #e2e8f0;
+                    --input-bg: #ffffff;
+                }
+                [data-theme="dark"] {
+                    --bg-color: #0d1117;
+                    --card-bg: #161b22;
+                    --text-color: #c9d1d9;
+                    --subtext-color: #8b949e;
+                    --border-color: #30363d;
+                    --input-bg: #0d1117;
+                }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 15px; transition: background 0.3s, color 0.3s; }
+                .container { max-width: 600px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+                .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 20px; }
                 .title h2 { margin: 0; color: #19692c; font-size: 22px; }
-                .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
+                .title p { margin: 4px 0 0 0; color: var(--subtext-color); font-size: 13px; }
                 .header-actions { display: flex; gap: 8px; }
-                .btn-top { background: #e9ecef; border: 1px solid #ced4da; border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: #334155; cursor: pointer; display: flex; align-items: center; gap: 4px; }
+                .btn-top { background: var(--border-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-color); cursor: pointer; display: flex; align-items: center; gap: 4px; text-decoration: none; }
                 
-                .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fff; }
+                .card { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--card-bg); }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
-                .card label { font-size: 13px; font-weight: 600; color: #334155; }
+                .card label { font-size: 13px; font-weight: 600; color: var(--text-color); }
                 .badge-pii { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
                 
-                textarea { width: 100%; height: 95px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical; color: #334155; }
+                textarea { width: 100%; height: 95px; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical; }
                 
-                .file-upload { border: 2px dashed #cbd5e1; border-radius: 6px; padding: 12px; text-align: center; margin-top: 10px; background: #fafafa; }
-                input[type="text"] { width: 100%; padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 13px; color: #334155; }
+                .file-upload { border: 2px dashed var(--border-color); border-radius: 6px; padding: 12px; text-align: center; margin-top: 10px; background: var(--bg-color); }
+                input[type="text"], input[type="file"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 13px; }
                 
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
                 
                 .result-display { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto; margin-bottom: 10px; }
                 .btn-group { display: flex; gap: 10px; }
-                .btn-secondary { background: #e2e8f0; color: #334155; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
-                .hash-tag { font-size: 11px; background: #e2e8f0; padding: 2px 6px; border-radius: 4px; color: #475569; }
+                .btn-secondary { background: var(--border-color); color: var(--text-color); border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
+                .hash-tag { font-size: 11px; background: var(--border-color); padding: 2px 6px; border-radius: 4px; color: var(--text-color); }
             </style>
         </head>
         <body>
@@ -74,22 +90,22 @@ def index():
                         <p>Enterprise Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
-                        <button class="btn-top">📄 Audit Logs</button>
-                        <button class="btn-top">🌓 Theme</button>
+                        <a href="/audit-logs" class="btn-top">📄 Audit Logs</a>
+                        <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
                     </div>
                 </div>
 
-                <form action="/api/index" method="POST">
+                <form action="/api/index" method="POST" enctype="multipart/form-data">
                     <div class="card">
                         <div class="card-header-row">
                             <label>Raw Corporate Data Input:</label>
                             <span class="badge-pii">⚠️ 4 PII Threat(s)</span>
                         </div>
-                        <textarea name="payload">Invoice for Vikram Malhotra, PAN: ABCDE5678G, Aadhaar: 4321 8765 1234, Email: vikram.m@fintechcorp.in, Mobile: +919876543210</textarea>
+                        <textarea name="payload" id="payload-input">Invoice for Vikram Malhotra, PAN: ABCDE5678G, Aadhaar: 4321 8765 1234, Email: vikram.m@fintechcorp.in, Mobile: +919876543210</textarea>
                         
                         <div class="file-upload">
-                            <span style="font-size: 12px; color: #64748b;">📁 Or Upload Batch File (.txt/.csv):</span><br><br>
-                            <input type="file" style="font-size: 12px; color: #64748b;">
+                            <span style="font-size: 12px; color: var(--subtext-color);">📁 Or Upload Batch File (.txt/.csv):</span><br><br>
+                            <input type="file" name="batch_file" id="batch-file" style="font-size: 12px;" onchange="handleFileSelect(event)">
                         </div>
 
                         <label style="margin-top: 14px; display: block; margin-bottom: 6px;">Custom Restricted Term Rule:</label>
@@ -113,11 +129,40 @@ def index():
             </div>
 
             <script>
+                function toggleTheme() {
+                    const root = document.getElementById('html-root');
+                    const currentTheme = root.getAttribute('data-theme');
+                    if (currentTheme === 'dark') {
+                        root.removeAttribute('data-theme');
+                        localStorage.setItem('theme', 'light');
+                    } else {
+                        root.setAttribute('data-theme', 'dark');
+                        localStorage.setItem('theme', 'dark');
+                    }
+                }
+                
+                // Load saved theme preference
+                if (localStorage.getItem('theme') === 'dark') {
+                    document.getElementById('html-root').setAttribute('data-theme', 'dark');
+                }
+
+                function handleFileSelect(event) {
+                    const file = event.target.files[0];
+                    if (file) {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            document.getElementById('payload-input').value = e.target.result;
+                        };
+                        reader.readAsText(file);
+                    }
+                }
+
                 function copyResult() {
                     const text = document.getElementById('result-content').innerText;
                     navigator.clipboard.writeText(text);
                     alert('Result copied to clipboard!');
                 }
+                
                 function exportReport() {
                     alert('Audit report successfully compiled and exported.');
                 }
@@ -126,13 +171,67 @@ def index():
         </html>
     ''')
 
+@app.route('/audit-logs')
+def view_audit_logs():
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, timestamp, hash_val, result_json FROM audit_logs ORDER BY id DESC LIMIT 20")
+        logs = cursor.fetchall()
+        conn.close()
+    except Exception as e:
+        logs = []
+
+    logs_html = ""
+    for log in logs:
+        logs_html += f"""
+            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; font-family: monospace;">
+                <b>ID:</b> {log[0]} | <b>Timestamp:</b> {log[1]}<br>
+                <b>SHA-256:</b> {log[2]}<br>
+                <details style="margin-top: 6px;"><summary style="cursor:pointer; color:#19692c;">View JSON Payload</summary>
+                <pre style="white-space: pre-wrap; word-break: break-all; margin-top: 5px;">{log[3]}</pre>
+                </details>
+            </div>
+        """
+    if not logs_html:
+        logs_html = "<p style='color: var(--subtext-color);'>No audit logs recorded yet.</p>"
+
+    return render_template_string(f'''
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Audit Logs - SovereignVault AI</title>
+            <style>
+                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }}
+                .container {{ max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }}
+                h2 {{ color: #19692c; margin-top: 0; }}
+                .btn-back {{ background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; margin-top: 15px; }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h2>Secure Audit Ledger History</h2>
+                {logs_html}
+                <a href="/" class="btn-back">&larr; Back to Clean Room Input</a>
+            </div>
+        </body>
+        </html>
+    ''')
+
 @app.route('/api/index', methods=['POST'])
 def secure_vault():
-    payload = request.form.get('payload', 'Sample Data')
+    # Handle file upload if present
+    uploaded_file = request.files.get('batch_file')
+    if uploaded_file and uploaded_file.filename != '':
+        payload = uploaded_file.read().decode('utf-8', errors='ignore')
+    else:
+        payload = request.form.get('payload', 'Sample Data')
+
     rule = request.form.get('rule', 'None')
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     
-    # Generate cryptographic hash and mock enterprise vector embedding
     payload_hash = hashlib.sha256(payload.encode()).hexdigest()
     vector_embedding = [round(float(ord(c)) / 255.0, 4) for c in payload_hash[:16]]
     
