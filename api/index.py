@@ -1,23 +1,29 @@
 from flask import Flask, render_template_string, request
 import sqlite3
 import hashlib
+import os
 
 app = Flask(__name__)
-DB_PATH = "sovereign_audit.db"
+
+# Use /tmp directory for serverless write permissions
+DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS audit_logs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-            action TEXT,
-            hash_val TEXT
-        )
-    ''')
-    conn.commit()
-    conn.close()
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+                action TEXT,
+                hash_val TEXT
+            )
+        ''')
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"DB Init Error: {e}")
 
 init_db()
 
@@ -53,18 +59,21 @@ def index():
 def secure_vault():
     payload = request.form.get('payload', '')
     payload_hash = hashlib.sha256(payload.encode()).hexdigest()
-
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    cursor.execute("INSERT INTO audit_logs (action, hash_val) VALUES (?, ?)", (payload, payload_hash))
-    conn.commit()
-
-    cursor.execute("SELECT id, timestamp, action, hash_val FROM audit_logs ORDER BY id DESC LIMIT 5")
-    logs = cursor.fetchall()
-    conn.close()
-
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("INSERT INTO audit_logs (action, hash_val) VALUES (?, ?)", (payload, payload_hash))
+        conn.commit()
+        
+        cursor.execute("SELECT id, timestamp, action, hash_val FROM audit_logs ORDER BY id DESC LIMIT 5")
+        logs = cursor.fetchall()
+        conn.close()
+    except Exception as e:
+        logs = [(1, "Now", f"Error loading logs: {e}", "N/A")]
+    
     logs_html = "".join([f"<li>[{row[1]}] <b>{row[2]}</b> (Hash: {row[3]})</li>" for row in logs])
-
+    
     return render_template_string(f'''
         <!DOCTYPE html>
         <html>
@@ -78,6 +87,4 @@ def secure_vault():
         </body>
         </html>
     ''')
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    
