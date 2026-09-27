@@ -5,7 +5,6 @@ import os
 
 app = Flask(__name__)
 
-# Use /tmp directory for serverless write permissions
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 
 def init_db():
@@ -45,7 +44,7 @@ def index():
             <div class="box">
                 <h2>SovereignVault RegTech Engine (Serverless Mode)</h2>
                 <p>Status: Operational & Clean-room Secure</p>
-                <form action="/secure-vault" method="POST">
+                <form action="/api/index" method="POST">
                     <label>Audit Payload / Entry:</label><br>
                     <input type="text" name="payload" style="width: 100%;" placeholder="Enter compliance data..." required><br>
                     <button type="submit">Commit to Ledger</button>
@@ -55,6 +54,7 @@ def index():
         </html>
     ''')
 
+@app.route('/api/index', methods=['POST'])
 @app.route('/secure-vault', methods=['POST'])
 def secure_vault():
     payload = request.form.get('payload', '')
@@ -87,4 +87,3 @@ def secure_vault():
         </body>
         </html>
     ''')
-    
