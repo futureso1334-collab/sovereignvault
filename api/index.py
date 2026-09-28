@@ -10,7 +10,6 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
-# ---- SEO: change this to your real deployed domain ----
 SITE_URL = os.environ.get('SITE_URL', 'https://example.com')
 
 @app.after_request
@@ -30,7 +29,6 @@ def mask_pii(text):
     text = re.sub(r'\b\d{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', '[GSTIN_REDACTED]', text)
     return text
 
-# ---- SEO: robots.txt ----
 @app.route('/robots.txt')
 def robots_txt():
     lines = [
@@ -44,7 +42,6 @@ def robots_txt():
     ]
     return Response("\n".join(lines), mimetype='text/plain')
 
-# ---- SEO: sitemap.xml (only the public page belongs here) ----
 @app.route('/sitemap.xml')
 def sitemap_xml():
     xml = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -76,26 +73,26 @@ def index():
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-                <!-- ===== SEO TAGS (public gateway page only) ===== -->
+                <!-- ===== Google Search Console verification ===== -->
+                <meta name="google-site-verification" content="PASTE_YOUR_CODE_HERE" />
+
+                <!-- ===== SEO TAGS ===== -->
                 <title>SovereignVault AI | Secure Indian Data Compliance & PII Redaction Gateway</title>
                 <meta name="description" content="SovereignVault AI is a secure clean-room gateway for Indian regulatory compliance — PAN, Aadhaar, GSTIN and PII redaction, RBI localization, IT Act 43A and DPDP Act guardrails.">
                 <meta name="keywords" content="PII redaction, DPDP Act compliance, RBI data localization, IT Act 43A, Aadhaar masking, PAN masking, GSTIN masking, data clean room, India data privacy">
                 <meta name="robots" content="index, follow">
                 <link rel="canonical" href="{{ site_url }}/">
 
-                <!-- Open Graph -->
                 <meta property="og:type" content="website">
                 <meta property="og:title" content="SovereignVault AI | Secure Indian Data Compliance Gateway">
                 <meta property="og:description" content="Air-gapped clean-room protocol for Indian PII redaction and regulatory compliance (RBI, IT Act, DPDP Act).">
                 <meta property="og:url" content="{{ site_url }}/">
                 <meta property="og:site_name" content="SovereignVault AI">
 
-                <!-- Twitter Card -->
                 <meta name="twitter:card" content="summary">
                 <meta name="twitter:title" content="SovereignVault AI | Secure Indian Data Compliance Gateway">
                 <meta name="twitter:description" content="Air-gapped clean-room protocol for Indian PII redaction and regulatory compliance (RBI, IT Act, DPDP Act).">
 
-                <!-- Structured data -->
                 <script type="application/ld+json">
                 {
                   "@context": "https://schema.org",
