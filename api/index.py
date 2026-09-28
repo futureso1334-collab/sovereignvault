@@ -10,7 +10,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
-SITE_URL = os.environ.get('SITE_URL', 'https://example.com')
+SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app')
 
 @app.after_request
 def set_security_headers(response):
@@ -28,6 +28,13 @@ def mask_pii(text):
     text = re.sub(r'\b\d{4}\s\d{4}\s\d{4}\b|\b\d{12}\b', '[AADHAAR_REDACTED]', text)
     text = re.sub(r'\b\d{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', '[GSTIN_REDACTED]', text)
     return text
+
+@app.route('/google844ca2efb192a5e1.html')
+def google_verification_file():
+    return Response(
+        "google-site-verification: google844ca2efb192a5e1.html",
+        mimetype='text/html'
+    )
 
 @app.route('/robots.txt')
 def robots_txt():
