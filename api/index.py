@@ -10,10 +10,6 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
-# In-memory audit log store for serverless environment
-if 'audit_logs' not in globals():
-    audit_logs = []
-
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -215,9 +211,10 @@ def logs():
                 .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
                 .title h2 { margin: 0; color: #19692c; font-size: 22px; }
                 .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
-                .log-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 12px; font-family: monospace; }
+                .log-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 12px; font-family: monospace; word-break: break-all; }
                 .btn-back { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; margin-top: 15px; }
                 .btn-back:hover { background: #14532d; }
+                .btn-clear { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; }
             </style>
         </head>
         <body>
@@ -227,24 +224,50 @@ def logs():
                         <h2>Audit Ledger</h2>
                         <p>Historical Clean Room Executions</p>
                     </div>
+                    <button class="btn-clear" onclick="clearLogs()">Clear Logs</button>
                 </div>
-                {% if logs %}
-                    {% for log in logs %}
-                        <div class="log-item">
-                            <b>Time:</b> {{ log.timestamp }}<br>
-                            <b>Status:</b> {{ log.status }}<br>
-                            <b>Rule:</b> {{ log.active_rule }}<br>
-                            <b>SHA256:</b> {{ log.checksum_sha256[:16] }}...
-                        </div>
-                    {% endfor %}
-                {% else %}
-                    <p style="text-align: center; color: #64748b; font-size: 13px;">No audit logs recorded yet in this session.</p>
-                {% endif %}
+                <div id="logs-container">
+                    <p style="text-align: center; color: #64748b; font-size: 13px;">Loading logs...</p>
+                </div>
                 <a href="/dashboard" class="btn-back">&larr; Back to Dashboard</a>
             </div>
+
+            <script>
+                function loadLogs() {
+                    const logsContainer = document.getElementById('logs-container');
+                    const savedLogs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
+                    
+                    if (savedLogs.length === 0) {
+                        logsContainer.innerHTML = '<p style="text-align: center; color: #64748b; font-size: 13px;">No audit logs recorded yet.</p>';
+                        return;
+                    }
+
+                    let html = '';
+                    savedLogs.forEach(log => {
+                        html += `
+                            <div class="log-item">
+                                <b>Time:</b> ${log.timestamp}<br>
+                                <b>Status:</b> ${log.status}<br>
+                                <b>Rule:</b> ${log.active_rule}<br>
+                                <b>SHA256:</b> ${log.checksum_sha256.substring(0, 16)}...
+                            </div>
+                        `;
+                    });
+                    logsContainer.innerHTML = html;
+                }
+
+                function clearLogs() {
+                    if (confirm('Are you sure you want to clear all audit logs?')) {
+                        localStorage.removeItem('sovereign_audit_logs');
+                        loadLogs();
+                    }
+                }
+
+                loadLogs();
+            </script>
         </body>
         </html>
-    ''', logs=audit_logs)
+    ''')
 
 @app.route('/logout')
 def logout():
@@ -291,9 +314,6 @@ def process_vault():
         "timestamp": timestamp,
         "vector_embedding": vector_embedding if not is_violation else []
     }
-    
-    # Save to audit logs
-    audit_logs.insert(0, response_data)
     
     pretty_json = json.dumps(response_data, indent=4)
 
@@ -348,6 +368,17 @@ def process_vault():
             </div>
 
             <script>
+                // Save log to browser storage upon execution
+                const newLog = {
+                    timestamp: "{{ response_data.timestamp }}",
+                    status: "{{ response_data.status }}",
+                    active_rule: "{{ response_data.active_rule }}",
+                    checksum_sha256: "{{ response_data.checksum_sha256 }}"
+                };
+                let existingLogs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
+                existingLogs.unshift(newLog);
+                localStorage.setItem('sovereign_audit_logs', JSON.stringify(existingLogs));
+
                 function copyResult() {
                     navigator.clipboard.writeText(document.getElementById('result-content').innerText);
                     alert('Result copied to clipboard!');
@@ -358,7 +389,7 @@ def process_vault():
             </script>
         </body>
         </html>
-    ''', pretty_json=pretty_json, hash_short=payload_hash[:10], badge_text=badge_text, badge_style=badge_style)
+    ''', pretty_json=pretty_json, hash_short=payload_hash[:10], badge_text=badge_text, badge_style=badge_style, response_data=response_data)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
