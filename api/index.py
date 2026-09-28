@@ -253,23 +253,35 @@ def secure_vault():
     else:
         raw_payload = request.form.get('payload', '')
 
-    # Automatically sanitize and mask PII
     sanitized_payload = mask_pii(raw_payload)
-
-    rule = request.form.get('rule', 'None')
+    rule = request.form.get('rule', '').strip()
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     
+    # Check if a custom rule term is present in the payload to determine violation status
+    is_violation = False
+    if rule and rule.lower() in raw_payload.lower():
+        is_violation = True
+
     payload_hash = hashlib.sha256(raw_payload.encode()).hexdigest()
     vector_embedding = [round(float(ord(c)) / 255.0, 4) for c in payload_hash[:16]]
     
+    if is_violation:
+        status_text = "FAILED (Restricted Rule Violation - Clean Room Blocked)"
+        badge_text = "⚠️ Security Violation"
+        badge_style = "background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;"
+    else:
+        status_text = "SUCCESS (Clean Room Verified)"
+        badge_text = "🛡️ Verified Clean"
+        badge_style = "background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0;"
+
     response_data = {
-        "ai_executive_summary": "Enterprise Clean Room Protocol Executed Successfully. PII Redacted & Vectorized.",
+        "ai_executive_summary": "Enterprise Clean Room Protocol Executed.",
         "checksum_sha256": payload_hash,
-        "sanitized_content": sanitized_payload,
+        "sanitized_content": "[BLOCKED DUE TO POLICY VIOLATION]" if is_violation else sanitized_payload,
         "active_rule": rule if rule else "None",
-        "status": "SUCCESS (Clean Room Verified)",
+        "status": status_text,
         "timestamp": timestamp,
-        "vector_embedding": vector_embedding
+        "vector_embedding": vector_embedding if not is_violation else []
     }
     
     pretty_json = json.dumps(response_data, indent=4)
@@ -297,13 +309,13 @@ def secure_vault():
                 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
                 .title h2 { margin: 0; color: #19692c; font-size: 22px; }
                 .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
-                .badge-verified { background: #f0fdf4; color: #166534; border: 1px solid #bbf7d0; padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; }
+                .badge-verified { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; {{ badge_style|safe }} }
                 
                 .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fff; }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
                 .card label { font-size: 13px; font-weight: 600; color: #334155; }
                 
-                .result-display { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow-y: auto; margin-bottom: 12px; }
+                .result-display { background: #f8fafc; border: 1px solid #cbd5e1; color: #0f172a; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow-y: auto; margin-bottom: 12px; }
                 .btn-group { display: flex; gap: 10px; }
                 .btn-secondary { background: #e2e8f0; color: #334155; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
                 .btn-back { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; }
@@ -318,7 +330,7 @@ def secure_vault():
                         <h2>SovereignVault AI</h2>
                         <p>Enterprise Clean Room & Audit Ledger</p>
                     </div>
-                    <div class="badge-verified">🛡️ Verified Clean</div>
+                    <div class="badge-verified">{{ badge_text }}</div>
                 </div>
 
                 <div class="card">
@@ -348,7 +360,7 @@ def secure_vault():
             </script>
         </body>
         </html>
-    ''', pretty_json=pretty_json, hash_short=payload_hash[:10])
+    ''', pretty_json=pretty_json, hash_short=payload_hash[:10], badge_text=badge_text, badge_style=badge_style)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
