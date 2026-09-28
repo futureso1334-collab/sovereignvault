@@ -1,5 +1,4 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
-import sqlite3
 import hashlib
 import json
 import os
@@ -10,36 +9,12 @@ import requests
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
-# Session security configurations
 app.config['SESSION_COOKIE_SECURE'] = True
 app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
-
-# Supabase REST Configuration
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
-
-def init_db():
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute('''
-            CREATE TABLE IF NOT EXISTS audit_logs (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT,
-                payload TEXT,
-                hash_val TEXT,
-                result_json TEXT
-            )
-        ''')
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB Init Error: {e}")
-
-init_db()
 
 @app.after_request
 def set_security_headers(response):
@@ -175,7 +150,6 @@ def index():
                 .btn-clear-file { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: none; align-items: center; gap: 4px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
-                .result-display { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto; margin-bottom: 10px; }
                 .btn-group { display: flex; gap: 10px; }
                 .btn-secondary { background: var(--border-color); color: var(--text-color); border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
                 .hash-tag { font-size: 11px; background: var(--border-color); padding: 2px 6px; border-radius: 4px; color: var(--text-color); }
@@ -189,7 +163,6 @@ def index():
                         <p>Secured Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
-                        <a href="/audit-logs" class="btn-top">📄 Logs</a>
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
                         <a href="/logout" class="btn-top btn-logout">🔒 Lock</a>
                     </div>
@@ -217,18 +190,6 @@ def index():
 
                     <button type="submit" class="btn-primary">Execute Clean Room Protocol</button>
                 </form>
-
-                <div class="card" style="margin-top: 15px; margin-bottom: 0;">
-                    <div class="card-header-row">
-                        <label>Secure Audit Ledger Result:</label>
-                        <span id="hash-label" class="hash-tag">Awaiting execution...</span>
-                    </div>
-                    <div class="result-display" id="result-content">Awaiting clean room execution...</div>
-                    <div class="btn-group">
-                        <button type="button" class="btn-secondary" onclick="copyResult()">Copy</button>
-                        <button type="button" class="btn-secondary" onclick="exportReport()">Export Report</button>
-                    </div>
-                </div>
             </div>
 
             <script>
@@ -262,67 +223,7 @@ def index():
                     document.getElementById('batch-file').value = '';
                     document.getElementById('clear-file-btn').style.display = 'none';
                 }
-
-                function copyResult() {
-                    navigator.clipboard.writeText(document.getElementById('result-content').innerText);
-                    alert('Result copied to clipboard!');
-                }
-                function exportReport() {
-                    alert('Audit report successfully compiled and exported.');
-                }
             </script>
-        </body>
-        </html>
-    ''')
-
-@app.route('/audit-logs')
-def view_audit_logs():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, timestamp, hash_val, result_json FROM audit_logs ORDER BY id DESC LIMIT 20")
-        logs = cursor.fetchall()
-        conn.close()
-    except Exception as e:
-        logs = []
-
-    logs_html = ""
-    for log in logs:
-        logs_html += f"""
-            <div style="background: var(--card-bg); border: 1px solid var(--border-color); padding: 12px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; font-family: monospace;">
-                <b>ID:</b> {log[0]} | <b>Timestamp:</b> {log[1]}<br>
-                <b>SHA-256:</b> {log[2]}<br>
-                <details style="margin-top: 6px;"><summary style="cursor:pointer; color:#19692c;">View JSON Payload</summary>
-                <pre style="white-space: pre-wrap; word-break: break-all; margin-top: 5px;">{log[3]}</pre>
-                </details>
-            </div>
-        """
-    if not logs_html:
-        logs_html = "<p style='color: var(--subtext-color);'>No audit logs recorded yet.</p>"
-
-    return render_template_string(f'''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Audit Logs - SovereignVault AI</title>
-            <style>
-                body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }}
-                .container {{ max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; }}
-                h2 {{ color: #19692c; margin-top: 0; }}
-                .btn-back {{ background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; margin-top: 15px; }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h2>Secure Audit Ledger History</h2>
-                {logs_html}
-                <a href="/" class="btn-back">&larr; Back to Clean Room Input</a>
-            </div>
         </body>
         </html>
     ''')
@@ -369,16 +270,6 @@ def secure_vault():
     }
     
     pretty_json = json.dumps(response_data, indent=4)
-    
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("INSERT INTO audit_logs (timestamp, payload, hash_val, result_json) VALUES (?, ?, ?, ?)", 
-                       (timestamp, raw_payload, payload_hash, pretty_json))
-        conn.commit()
-        conn.close()
-    except Exception as e:
-        print(f"DB Error: {e}")
 
     return render_template_string('''
         <!DOCTYPE html>
