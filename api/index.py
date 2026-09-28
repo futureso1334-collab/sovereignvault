@@ -13,8 +13,7 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 
-# Supabase Configuration from Environment Variables
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 def init_db():
@@ -71,8 +70,10 @@ def login():
                         return redirect(url_for('index'))
                     else:
                         error = 'Invalid email or password.'
+            except urllib.error.HTTPError as e:
+                error = 'Authentication failed. Please verify your email and password.'
             except Exception as e:
-                error = 'Authentication failed. Please check credentials.'
+                error = 'Connection error during authentication.'
 
     return render_template_string('''
         <!DOCTYPE html>
@@ -108,7 +109,7 @@ def login():
                 <form method="POST">
                     <div class="form-group">
                         <label>Email Address</label>
-                        <input type="email" name="email" required placeholder="admin@enterprise.com">
+                        <input type="email" name="email" required value="futureso1334@gmail.com" placeholder="futureso1334@gmail.com">
                     </div>
                     <div class="form-group">
                         <label>Password</label>
@@ -116,7 +117,7 @@ def login():
                     </div>
                     <button type="submit" class="btn-primary">Sign In via Supabase</button>
                 </form>
-                <div class="hint">Use your Supabase dashboard credentials to sign in.</div>
+                <div class="hint">Use your Supabase user credentials to sign in.</div>
             </div>
         </body>
         </html>
