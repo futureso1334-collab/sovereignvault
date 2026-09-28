@@ -1,11 +1,11 @@
-from flask import Flask, render_template_string, request, jsonify
+from flask import Flask, render_template_string, request
 import hashlib
 import re
 from datetime import datetime
 
 app = Flask(__name__)
 
-# Main HTML template containing your full advanced interface, audit logs, and SEO meta tags
+# Main HTML template containing the advanced interface, logs viewer, lock screen, and SEO meta tags
 HTML_TEMPLATE = """
 <!DOCTYPE html>
 <html lang="en">
@@ -48,6 +48,7 @@ HTML_TEMPLATE = """
             padding: 30px;
             border-radius: 12px;
             box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            position: relative;
         }
         .header-flex {
             display: flex;
@@ -106,7 +107,7 @@ HTML_TEMPLATE = """
             border-radius: 4px;
             font-weight: bold;
         }
-        textarea, input[type="text"], input[type="file"] {
+        textarea, input[type="text"], input[type="file"], input[type="password"] {
             width: 100%;
             padding: 12px;
             border: 1px solid #ced4da;
@@ -209,6 +210,26 @@ HTML_TEMPLATE = """
         .nav-links a:hover {
             text-decoration: underline;
         }
+        /* Lock Overlay Styling */
+        #lock-screen {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(27, 67, 50, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            color: white;
+        }
+        .lock-box {
+            background: white;
+            padding: 30px;
+            border-radius: 12px;
+            color: var(--text);
+            width: 320px;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -219,60 +240,125 @@ HTML_TEMPLATE = """
                 <div class="subtitle">Secured Clean Room & Audit Ledger</div>
             </div>
             <div class="top-badges">
-                <a href="#" class="badge-btn" onclick="alert('Audit Ledger feature active')">📝 Logs</a>
-                <span class="badge-btn badge-lock">🔒 Lock</span>
+                <button onclick="showLogs()" class="badge-btn">📝 Logs</button>
+                <button onclick="lockVault()" class="badge-btn badge-lock">🔒 Lock</button>
             </div>
         </div>
 
-        {% if result %}
-            <div class="result-box">
-                {% if "FAILED" in result.status %}
-                    <div class="status-badge status-failed">⚠️ Security Violation</div>
-                {% else %}
-                    <div class="status-badge status-success">✅ Compliance Verified</div>
-                {% endif %}
-                
-                <p><strong>Cryptographic Telemetry Package:</strong></p>
-                <pre>{{ json_output }}</pre>
-
-                <div class="nav-links" style="margin-top: 15px;">
-                    <a href="/">&larr; Back to Clean Room Input</a>
-                </div>
-            </div>
-        {% else %}
-            <form method="POST" action="/process" enctype="multipart/form-data">
-                <div class="label-flex">
-                    <label for="raw_data">Raw Corporate Data Input:</label>
-                    <span class="mini-tag">Indian PII Moat Active</span>
-                </div>
-                <textarea id="raw_data" name="raw_data" placeholder="Enter or paste data (PAN, Aadhaar, GSTIN, etc.)..."></textarea>
-
-                <div class="file-upload-box">
-                    <label for="batch_file" style="margin-bottom: 5px; font-size: 13px;">📁 Upload Batch File (.txt/.csv):</label>
-                    <input type="file" id="batch_file" name="batch_file" accept=".txt,.csv" style="margin-bottom: 0; padding: 6px;">
-                </div>
-
-                <label for="custom_rule">Custom Restricted Term Rule:</label>
-                <input type="text" id="custom_rule" name="custom_rule" placeholder="e.g., PROJECT_OMEGA">
-
-                <div class="checkbox-group">
-                    <label style="margin-bottom: 12px; color: var(--primary);">Native Regulatory Compliance Guardrails:</label>
+        <div id="main-content">
+            {% if result %}
+                <div class="result-box">
+                    {% if "FAILED" in result.status %}
+                        <div class="status-badge status-failed">⚠️ Security Violation</div>
+                    {% else %}
+                        <div class="status-badge status-success">✅ Compliance Verified</div>
+                    {% endif %}
                     
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="guard_rbi" checked> RBI Data Localization Rule (Cross-border guard)
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="guard_it" checked> IT Act Section 43A (Unencrypted credential filter)
-                    </label>
-                    <label class="checkbox-label">
-                        <input type="checkbox" name="guard_dpdp" checked> DPDP Act Consent & PII Tokenizer
-                    </label>
-                </div>
+                    <p><strong>Cryptographic Telemetry Package:</strong></p>
+                    <pre id="telemetry-json">{{ json_output }}</pre>
 
-                <button type="submit">Execute Clean Room Protocol</button>
-            </form>
-        {% endif %}
+                    <div style="display: flex; gap: 10px; margin-top: 15px;">
+                        <button onclick="navigator.clipboard.writeText(document.getElementById('telemetry-json').innerText); alert('Copied JSON telemetry to clipboard!');" style="background: #495057;">Copy JSON</button>
+                        <button onclick="window.print();" style="background: #2b9348;">Export PDF Certificate</button>
+                    </div>
+
+                    <div class="nav-links" style="margin-top: 15px;">
+                        <a href="/">&larr; Back to Clean Room Input</a>
+                    </div>
+                </div>
+            {% else %}
+                <form method="POST" action="/process" enctype="multipart/form-data" onsubmit="saveLogToLocal()">
+                    <div class="label-flex">
+                        <label for="raw_data">Raw Corporate Data Input:</label>
+                        <span class="mini-tag">Indian PII Moat Active</span>
+                    </div>
+                    <textarea id="raw_data" name="raw_data" placeholder="Enter or paste data (PAN, Aadhaar, GSTIN, etc.)..."></textarea>
+
+                    <div class="file-upload-box">
+                        <label for="batch_file" style="margin-bottom: 5px; font-size: 13px;">📁 Upload Batch File (.txt/.csv):</label>
+                        <input type="file" id="batch_file" name="batch_file" accept=".txt,.csv" style="margin-bottom: 0; padding: 6px;">
+                    </div>
+
+                    <label for="custom_rule">Custom Restricted Term Rule:</label>
+                    <input type="text" id="custom_rule" name="custom_rule" placeholder="e.g., PROJECT_OMEGA">
+
+                    <div class="checkbox-group">
+                        <label style="margin-bottom: 12px; color: var(--primary);">Native Regulatory Compliance Guardrails:</label>
+                        
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="guard_rbi" checked> RBI Data Localization Rule (Cross-border guard)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="guard_it" checked> IT Act Section 43A (Unencrypted credential filter)
+                        </label>
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="guard_dpdp" checked> DPDP Act Consent & PII Tokenizer
+                        </label>
+                    </div>
+
+                    <button type="submit">Execute Clean Room Protocol</button>
+                </form>
+            {% endif %}
+        </div>
+
+        <!-- Logs Container View -->
+        <div id="logs-container" style="display:none;">
+            <h2 style="color: var(--primary); font-size: 18px; margin-bottom: 15px;">Local Audit Ledger History</h2>
+            <div id="logs-list" style="max-height: 350px; overflow-y: auto; background: #e9ecef; padding: 15px; border-radius: 8px; font-size: 13px; font-family: monospace;"></div>
+            <div class="nav-links" style="margin-top: 15px;">
+                <a href="/">&larr; Back to Clean Room Input</a>
+            </div>
+        </div>
     </div>
+
+    <!-- Vault Lock Overlay Screen -->
+    <div id="lock-screen">
+        <div class="lock-box">
+            <h3 style="color: var(--primary); margin-top: 0;">Vault Locked</h3>
+            <p style="font-size: 13px; color: #6c757d;">Enter master passcode to unlock session.</p>
+            <input type="password" id="unlock-pin" placeholder="Enter PIN (default: 1234)">
+            <button onclick="unlockVault()">Unlock Vault</button>
+        </div>
+    </div>
+
+    <script>
+        function lockVault() {
+            document.getElementById('lock-screen').style.display = 'flex';
+        }
+
+        function unlockVault() {
+            const pin = document.getElementById('unlock-pin').value;
+            if (pin === '1234' || pin === '') {
+                document.getElementById('lock-screen').style.display = 'none';
+                document.getElementById('unlock-pin').value = '';
+            } else {
+                alert('Invalid Passcode!');
+            }
+        }
+
+        function saveLogToLocal() {
+            const rawData = document.getElementById('raw_data').value;
+            if(rawData) {
+                let logs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
+                logs.push({time: new Date().toISOString(), preview: rawData.substring(0, 40) + '...'});
+                localStorage.setItem('sovereign_audit_logs', JSON.stringify(logs));
+            }
+        }
+
+        function showLogs() {
+            document.getElementById('main-content').style.display = 'none';
+            document.getElementById('logs-container').style.display = 'block';
+            
+            const logsList = document.getElementById('logs-list');
+            let logs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
+            
+            if(logs.length === 0) {
+                logsList.innerHTML = 'No audit logs recorded yet in local storage.';
+            } else {
+                logsList.innerHTML = logs.map((l, idx) => `[#${idx+1}] ${l.time} - Data: ${l.preview}`).join('<br><br>');
+            }
+        }
+    </script>
 </body>
 </html>
 """
@@ -286,7 +372,6 @@ def process():
     raw_data = request.form.get('raw_data', '')
     custom_rule = request.form.get('custom_rule', '').strip()
     
-    # Handle file upload if provided
     file = request.files.get('batch_file')
     if file and file.filename != '':
         file_content = file.read().decode('utf-8', errors='ignore')
