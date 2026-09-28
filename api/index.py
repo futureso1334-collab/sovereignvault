@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import hashlib
 import json
@@ -7,6 +7,8 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
+# Secure secret key for signing session cookies
+app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 
@@ -32,16 +34,84 @@ init_db()
 
 def mask_pii(text):
     """Automatically masks emails, phone numbers, and Indian PAN numbers for clean room safety."""
-    # Mask Emails
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
-    # Mask Phone Numbers (10-digit or international with +)
     text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
-    # Mask PAN Numbers (e.g., ABCDE1234F)
     text = re.sub(r'[A-Z]{5}[0-9]{4}[A-Z]{1}', '[PAN_REDACTED]', text)
     return text
 
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    error = None
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        # Simple hardcoded secure admin credential check (can be expanded)
+        if username == 'admin' and password == 'sovereign2026':
+            session['logged_in'] = True
+            session['username'] = username
+            return redirect(url_for('index'))
+        else:
+            error = 'Invalid credentials. Access denied.'
+
+    return render_template_string('''
+        <!DOCTYPE html>
+        <html lang="en" id="html-root">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>Login - SovereignVault AI</title>
+            <style>
+                :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
+                .container { width: 100%; max-width: 400px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+                .title h2 { margin: 0; color: #19692c; font-size: 24px; text-align: center; }
+                .title p { margin: 4px 0 20px 0; color: var(--subtext-color); font-size: 13px; text-align: center; }
+                .form-group { margin-bottom: 15px; }
+                label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px; }
+                input[type="text"], input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
+                .btn-primary:hover { background: #14532d; }
+                .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; text-align: center; }
+                .hint { font-size: 11px; color: var(--subtext-color); text-align: center; margin-top: 15px; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="title">
+                    <h2>SovereignVault AI</h2>
+                    <p>Enterprise Clean Room Authentication</p>
+                </div>
+                {% if error %}
+                    <div class="error-msg">{{ error }}</div>
+                {% endif %}
+                <form method="POST">
+                    <div class="form-group">
+                        <label>Username</label>
+                        <input type="text" name="username" required placeholder="Enter username">
+                    </div>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" name="password" required placeholder="Enter password">
+                    </div>
+                    <button type="submit" class="btn-primary">Sign In to Clean Room</button>
+                </form>
+                <div class="hint">Default Credentials — Username: <b>admin</b> | Password: <b>sovereign2026</b></div>
+            </div>
+        </body>
+        </html>
+    ''', error=error)
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
 @app.route('/')
 def index():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+        
     return render_template_string('''
         <!DOCTYPE html>
         <html lang="en" id="html-root">
@@ -71,8 +141,9 @@ def index():
                 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 20px; }
                 .title h2 { margin: 0; color: #19692c; font-size: 22px; }
                 .title p { margin: 4px 0 0 0; color: var(--subtext-color); font-size: 13px; }
-                .header-actions { display: flex; gap: 8px; }
+                .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
                 .btn-top { background: var(--border-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-color); cursor: pointer; display: flex; align-items: center; gap: 4px; text-decoration: none; }
+                .btn-logout { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
                 
                 .card { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--card-bg); }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
@@ -86,8 +157,6 @@ def index():
                 input[type="text"], input[type="file"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 13px; }
                 
                 .btn-clear-file { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: none; align-items: center; gap: 4px; }
-                .btn-clear-file:hover { background: #fecaca; }
-
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
                 
@@ -105,8 +174,9 @@ def index():
                         <p>Enterprise Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
-                        <a href="/audit-logs" class="btn-top">📄 Audit Logs</a>
+                        <a href="/audit-logs" class="btn-top">📄 Logs</a>
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
+                        <a href="/logout" class="btn-top btn-logout">🚪 Logout</a>
                     </div>
                 </div>
 
@@ -149,8 +219,7 @@ def index():
             <script>
                 function toggleTheme() {
                     const root = document.getElementById('html-root');
-                    const currentTheme = root.getAttribute('data-theme');
-                    if (currentTheme === 'dark') {
+                    if (root.getAttribute('data-theme') === 'dark') {
                         root.removeAttribute('data-theme');
                         localStorage.setItem('theme', 'light');
                     } else {
@@ -158,16 +227,14 @@ def index():
                         localStorage.setItem('theme', 'dark');
                     }
                 }
-                
                 if (localStorage.getItem('theme') === 'dark') {
                     document.getElementById('html-root').setAttribute('data-theme', 'dark');
                 }
 
                 function handleFileSelect(event) {
                     const file = event.target.files[0];
-                    const clearBtn = document.getElementById('clear-file-btn');
                     if (file) {
-                        clearBtn.style.display = 'inline-flex';
+                        document.getElementById('clear-file-btn').style.display = 'inline-flex';
                         const reader = new FileReader();
                         reader.onload = function(e) {
                             document.getElementById('payload-input').value = e.target.result;
@@ -177,17 +244,14 @@ def index():
                 }
 
                 function clearFileSelection() {
-                    const fileInput = document.getElementById('batch-file');
-                    fileInput.value = '';
+                    document.getElementById('batch-file').value = '';
                     document.getElementById('clear-file-btn').style.display = 'none';
                 }
 
                 function copyResult() {
-                    const text = document.getElementById('result-content').innerText;
-                    navigator.clipboard.writeText(text);
+                    navigator.clipboard.writeText(document.getElementById('result-content').innerText);
                     alert('Result copied to clipboard!');
                 }
-                
                 function exportReport() {
                     alert('Audit report successfully compiled and exported.');
                 }
@@ -198,6 +262,9 @@ def index():
 
 @app.route('/audit-logs')
 def view_audit_logs():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
@@ -247,6 +314,9 @@ def view_audit_logs():
 
 @app.route('/api/index', methods=['POST'])
 def secure_vault():
+    if not session.get('logged_in'):
+        return redirect(url_for('login'))
+
     uploaded_file = request.files.get('batch_file')
     if uploaded_file and uploaded_file.filename != '':
         raw_payload = uploaded_file.read().decode('utf-8', errors='ignore')
@@ -257,7 +327,6 @@ def secure_vault():
     rule = request.form.get('rule', '').strip()
     timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
     
-    # Check if a custom rule term is present in the payload to determine violation status
     is_violation = False
     if rule and rule.lower() in raw_payload.lower():
         is_violation = True
@@ -350,8 +419,7 @@ def secure_vault():
 
             <script>
                 function copyResult() {
-                    const text = document.getElementById('result-content').innerText;
-                    navigator.clipboard.writeText(text);
+                    navigator.clipboard.writeText(document.getElementById('result-content').innerText);
                     alert('Result copied to clipboard!');
                 }
                 function exportReport() {
