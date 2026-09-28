@@ -74,7 +74,7 @@ def index():
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
                 <!-- ===== Google Search Console verification ===== -->
-                <meta name="google-site-verification" content="PASTE_YOUR_CODE_HERE" />
+                <meta name="google-site-verification" content="9u99QZ6kjvNe3Mqd78iJsuGN7NpnOI6SlBk-NoE-s2w" />
 
                 <!-- ===== SEO TAGS ===== -->
                 <title>SovereignVault AI | Secure Indian Data Compliance & PII Redaction Gateway</title>
