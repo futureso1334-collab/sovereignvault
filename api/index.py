@@ -5,16 +5,14 @@ import json
 import os
 import re
 from datetime import datetime
-import urllib.request
-import urllib.parse
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+# Secure Master Access Key to prevent unauthorized access/tampering
+MASTER_ACCESS_KEY = os.environ.get('MASTER_ACCESS_KEY', 'sovereign2026')
 
 def init_db():
     try:
@@ -46,34 +44,12 @@ def mask_pii(text):
 def login():
     error = None
     if request.method == 'POST':
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '').strip()
-        
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            error = "Supabase environment variables are missing on Vercel."
+        passcode = request.form.get('passcode', '').strip()
+        if passcode == MASTER_ACCESS_KEY:
+            session['logged_in'] = True
+            return redirect(url_for('index'))
         else:
-            try:
-                auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
-                payload = json.dumps({"email": email, "password": password}).encode('utf-8')
-                
-                req = urllib.request.Request(auth_url, data=payload, headers={
-                    'Content-Type': 'application/json',
-                    'apikey': SUPABASE_KEY
-                })
-                
-                with urllib.request.urlopen(req) as response:
-                    data = json.loads(response.read().decode('utf-8'))
-                    if 'access_token' in data:
-                        session['logged_in'] = True
-                        session['user_email'] = email
-                        session['access_token'] = data['access_token']
-                        return redirect(url_for('index'))
-                    else:
-                        error = 'Invalid email or password.'
-            except urllib.error.HTTPError as e:
-                error = 'Authentication failed. Please verify your email and password.'
-            except Exception as e:
-                error = 'Connection error during authentication.'
+            error = 'Invalid Master Access Key. Unauthorized access blocked.'
 
     return render_template_string('''
         <!DOCTYPE html>
@@ -81,7 +57,7 @@ def login():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Login - SovereignVault AI</title>
+            <title>Access Control - SovereignVault AI</title>
             <style>
                 :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
@@ -90,7 +66,7 @@ def login():
                 .title p { margin: 4px 0 20px 0; color: var(--subtext-color); font-size: 13px; text-align: center; }
                 .form-group { margin-bottom: 15px; }
                 label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px; }
-                input[type="email"], input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
                 .btn-primary:hover { background: #14532d; }
                 .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; text-align: center; }
@@ -101,23 +77,19 @@ def login():
             <div class="container">
                 <div class="title">
                     <h2>SovereignVault AI</h2>
-                    <p>Supabase Enterprise Authentication</p>
+                    <p>Secure Anti-Tamper Gateway</p>
                 </div>
                 {% if error %}
                     <div class="error-msg">{{ error }}</div>
                 {% endif %}
                 <form method="POST">
                     <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" name="email" required value="futureso1334@gmail.com" placeholder="futureso1334@gmail.com">
+                        <label>Master Access Passcode</label>
+                        <input type="password" name="passcode" required placeholder="Enter master key">
                     </div>
-                    <div class="form-group">
-                        <label>Password</label>
-                        <input type="password" name="password" required placeholder="Enter password">
-                    </div>
-                    <button type="submit" class="btn-primary">Sign In via Supabase</button>
+                    <button type="submit" class="btn-primary">Unlock SovereignVault</button>
                 </form>
-                <div class="hint">Use your Supabase user credentials to sign in.</div>
+                <div class="hint">Protected against unauthorized access and tampering.</div>
             </div>
         </body>
         </html>
@@ -178,7 +150,7 @@ def index():
                     <div class="header-actions">
                         <a href="/audit-logs" class="btn-top">📄 Logs</a>
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
-                        <a href="/logout" class="btn-top btn-logout">🚪 Logout</a>
+                        <a href="/logout" class="btn-top btn-logout">🔒 Lock</a>
                     </div>
                 </div>
 
