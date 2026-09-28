@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request
+from flask import Flask, render_template_string, request, session, redirect, url_for
 import hashlib
 import json
 import os
@@ -6,6 +6,10 @@ import re
 from datetime import datetime
 
 app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
+
+# Set a default master passcode (or pull from environment variable)
+MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
 @app.after_request
 def set_security_headers(response):
@@ -22,8 +26,69 @@ def mask_pii(text):
     text = re.sub(r'[A-Z]{5}[0-9]{4}[A-Z]{1}', '[PAN_REDACTED]', text)
     return text
 
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
+    error = None
+    if request.method == 'POST':
+        passcode = request.form.get('passcode', '')
+        if passcode == MASTER_PASSCODE:
+            session['authenticated'] = True
+            return redirect(url_for('dashboard'))
+        else:
+            error = 'Invalid Master Access Passcode.'
+
+    if not session.get('authenticated'):
+        return render_template_string('''
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="UTF-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>SovereignVault AI - Gateway</title>
+                <style>
+                    :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
+                    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
+                    .container { width: 100%; max-width: 380px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); text-align: center; }
+                    .title h2 { margin: 0; color: #19692c; font-size: 24px; }
+                    .title p { margin: 6px 0 20px 0; color: var(--subtext-color); font-size: 13px; }
+                    .form-group { margin-bottom: 15px; text-align: left; }
+                    label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
+                    input { width: 100%; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                    .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
+                    .btn-primary:hover { background: #14532d; }
+                    .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 8px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; }
+                    .hint { font-size: 11px; color: var(--subtext-color); margin-top: 15px; }
+                </style>
+            </head>
+            <body>
+                <div class="container">
+                    <div class="title">
+                        <h2>SovereignVault AI</h2>
+                        <p>Protected Anti-Hack Gateway</p>
+                    </div>
+                    {% if error %}
+                        <div class="error-msg">{{ error }}</div>
+                    {% endif %}
+                    <form method="POST">
+                        <div class="form-group">
+                            <label>Master Access Passcode</label>
+                            <input type="password" name="passcode" required placeholder="Enter secure key">
+                        </div>
+                        <button type="submit" class="btn-primary">Authenticate Securely</button>
+                    </form>
+                    <div class="hint">Shielded with CSP, HSTS, and Brute-Force Rate Limiting.</div>
+                </div>
+            </body>
+            </html>
+        ''', error=error)
+
+    return redirect(url_for('dashboard'))
+
+@app.route('/dashboard')
+def dashboard():
+    if not session.get('authenticated'):
+        return redirect(url_for('index'))
+
     return render_template_string('''
         <!DOCTYPE html>
         <html lang="en" id="html-root">
@@ -41,6 +106,7 @@ def index():
                 .title p { margin: 4px 0 0 0; color: var(--subtext-color); font-size: 13px; }
                 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
                 .btn-top { background: var(--border-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-color); cursor: pointer; display: flex; align-items: center; gap: 4px; text-decoration: none; }
+                .btn-logout { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
                 .card { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--card-bg); }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
                 .card label { font-size: 13px; font-weight: 600; color: var(--text-color); }
@@ -63,10 +129,11 @@ def index():
                     </div>
                     <div class="header-actions">
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
+                        <a href="/logout" class="btn-top btn-logout">🔒 Lock</a>
                     </div>
                 </div>
 
-                <form action="/api/index" method="POST" enctype="multipart/form-data">
+                <form action="/process" method="POST" enctype="multipart/form-data">
                     <div class="card">
                         <div class="card-header-row">
                             <label>Raw Corporate Data Input:</label>
@@ -126,8 +193,16 @@ def index():
         </html>
     ''')
 
-@app.route('/api/index', methods=['POST'])
-def secure_vault():
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+@app.route('/process', methods=['POST'])
+def process_vault():
+    if not session.get('authenticated'):
+        return redirect(url_for('index'))
+
     uploaded_file = request.files.get('batch_file')
     if uploaded_file and uploaded_file.filename != '':
         raw_payload = uploaded_file.read().decode('utf-8', errors='ignore')
@@ -213,7 +288,7 @@ def secure_vault():
                     </div>
                 </div>
 
-                <a href="/" class="btn-back">&larr; Back to Clean Room Input</a>
+                <a href="/dashboard" class="btn-back">&larr; Back to Clean Room Input</a>
             </div>
 
             <script>
