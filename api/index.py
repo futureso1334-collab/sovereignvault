@@ -8,8 +8,11 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
-# Set a default master passcode (or pull from environment variable)
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
+
+# In-memory audit log store for serverless environment
+if 'audit_logs' not in globals():
+    audit_logs = []
 
 @app.after_request
 def set_security_headers(response):
@@ -128,6 +131,7 @@ def dashboard():
                         <p>Secured Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
+                        <a href="/logs" class="btn-top">📋 Logs</a>
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
                         <a href="/logout" class="btn-top btn-logout">🔒 Lock</a>
                     </div>
@@ -193,6 +197,55 @@ def dashboard():
         </html>
     ''')
 
+@app.route('/logs')
+def logs():
+    if not session.get('authenticated'):
+        return redirect(url_for('index'))
+
+    return render_template_string('''
+        <!DOCTYPE html>
+        <html lang="en">
+        <head>
+            <meta charset="UTF-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+            <title>SovereignVault AI - Audit Logs</title>
+            <style>
+                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }
+                .container { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
+                .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; padding-bottom: 15px; margin-bottom: 20px; }
+                .title h2 { margin: 0; color: #19692c; font-size: 22px; }
+                .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
+                .log-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 12px; font-family: monospace; }
+                .btn-back { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; margin-top: 15px; }
+                .btn-back:hover { background: #14532d; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="header">
+                    <div class="title">
+                        <h2>Audit Ledger</h2>
+                        <p>Historical Clean Room Executions</p>
+                    </div>
+                </div>
+                {% if logs %}
+                    {% for log in logs %}
+                        <div class="log-item">
+                            <b>Time:</b> {{ log.timestamp }}<br>
+                            <b>Status:</b> {{ log.status }}<br>
+                            <b>Rule:</b> {{ log.active_rule }}<br>
+                            <b>SHA256:</b> {{ log.checksum_sha256[:16] }}...
+                        </div>
+                    {% endfor %}
+                {% else %}
+                    <p style="text-align: center; color: #64748b; font-size: 13px;">No audit logs recorded yet in this session.</p>
+                {% endif %}
+                <a href="/dashboard" class="btn-back">&larr; Back to Dashboard</a>
+            </div>
+        </body>
+        </html>
+    ''', logs=audit_logs)
+
 @app.route('/logout')
 def logout():
     session.clear()
@@ -221,7 +274,7 @@ def process_vault():
     vector_embedding = [round(float(ord(c)) / 255.0, 4) for c in payload_hash[:16]]
     
     if is_violation:
-        status_text = "FAILED (Restricted Rule Violation - Clean Room Blocked)"
+        status_text = "FAILED (Restricted Rule Violation)"
         badge_text = "⚠️ Security Violation"
         badge_style = "background: #fef2f2; color: #991b1b; border: 1px solid #fecaca;"
     else:
@@ -238,6 +291,9 @@ def process_vault():
         "timestamp": timestamp,
         "vector_embedding": vector_embedding if not is_violation else []
     }
+    
+    # Save to audit logs
+    audit_logs.insert(0, response_data)
     
     pretty_json = json.dumps(response_data, indent=4)
 
