@@ -1,20 +1,11 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import Flask, render_template_string, request
 import hashlib
 import json
 import os
 import re
 from datetime import datetime
-import requests
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
-
-app.config['SESSION_COOKIE_SECURE'] = True
-app.config['SESSION_COOKIE_HTTPONLY'] = True
-app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
-
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 @app.after_request
 def set_security_headers(response):
@@ -31,96 +22,8 @@ def mask_pii(text):
     text = re.sub(r'[A-Z]{5}[0-9]{4}[A-Z]{1}', '[PAN_REDACTED]', text)
     return text
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    error = None
-    if request.method == 'POST':
-        email = request.form.get('email', '').strip()
-        password = request.form.get('password', '').strip()
-        
-        if not SUPABASE_URL or not SUPABASE_KEY:
-            error = 'Supabase credentials are not configured on this server.'
-        else:
-            try:
-                auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
-                headers = {
-                    "apikey": SUPABASE_KEY,
-                    "Content-Type": "application/json"
-                }
-                payload = {
-                    "email": email,
-                    "password": password
-                }
-                
-                response = requests.post(auth_url, json=payload, headers=headers)
-                if response.status_code == 200:
-                    session['logged_in'] = True
-                    session['user_email'] = email
-                    session.permanent = True
-                    return redirect(url_for('index'))
-                else:
-                    error = 'Invalid email or password. Authentication failed.'
-            except Exception as e:
-                error = f'Connection error: {str(e)}'
-
-    return render_template_string('''
-        <!DOCTYPE html>
-        <html lang="en">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Supabase Login - SovereignVault AI</title>
-            <style>
-                :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
-                body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
-                .container { width: 100%; max-width: 400px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 25px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
-                .title h2 { margin: 0; color: #19692c; font-size: 24px; text-align: center; }
-                .title p { margin: 4px 0 20px 0; color: var(--subtext-color); font-size: 13px; text-align: center; }
-                .form-group { margin-bottom: 15px; }
-                label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px; }
-                input { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
-                .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
-                .btn-primary:hover { background: #14532d; }
-                .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; text-align: center; }
-                .hint { font-size: 11px; color: var(--subtext-color); text-align: center; margin-top: 15px; }
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="title">
-                    <h2>SovereignVault AI</h2>
-                    <p>Secured via Supabase Auth</p>
-                </div>
-                {% if error %}
-                    <div class="error-msg">{{ error }}</div>
-                {% endif %}
-                <form method="POST">
-                    <div class="form-group">
-                        <label>Email Address</label>
-                        <input type="email" name="email" required placeholder="admin@enterprise.com">
-                    </div>
-                    <div class="form-group">
-                        <label>Password</label>
-                        <input type="password" name="password" required placeholder="••••••••">
-                    </div>
-                    <button type="submit" class="btn-primary">Sign In with Supabase</button>
-                </form>
-                <div class="hint">Enterprise Identity Management Enabled.</div>
-            </div>
-        </body>
-        </html>
-    ''', error=error)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
 @app.route('/')
 def index():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-        
     return render_template_string('''
         <!DOCTYPE html>
         <html lang="en" id="html-root">
@@ -138,7 +41,6 @@ def index():
                 .title p { margin: 4px 0 0 0; color: var(--subtext-color); font-size: 13px; }
                 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
                 .btn-top { background: var(--border-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-color); cursor: pointer; display: flex; align-items: center; gap: 4px; text-decoration: none; }
-                .btn-logout { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
                 .card { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--card-bg); }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
                 .card label { font-size: 13px; font-weight: 600; color: var(--text-color); }
@@ -150,9 +52,6 @@ def index():
                 .btn-clear-file { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: none; align-items: center; gap: 4px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
-                .btn-group { display: flex; gap: 10px; }
-                .btn-secondary { background: var(--border-color); color: var(--text-color); border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
-                .hash-tag { font-size: 11px; background: var(--border-color); padding: 2px 6px; border-radius: 4px; color: var(--text-color); }
             </style>
         </head>
         <body>
@@ -164,7 +63,6 @@ def index():
                     </div>
                     <div class="header-actions">
                         <button type="button" class="btn-top" onclick="toggleTheme()">🌓 Theme</button>
-                        <a href="/logout" class="btn-top btn-logout">🔒 Lock</a>
                     </div>
                 </div>
 
@@ -230,9 +128,6 @@ def index():
 
 @app.route('/api/index', methods=['POST'])
 def secure_vault():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-
     uploaded_file = request.files.get('batch_file')
     if uploaded_file and uploaded_file.filename != '':
         raw_payload = uploaded_file.read().decode('utf-8', errors='ignore')
