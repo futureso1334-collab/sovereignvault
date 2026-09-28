@@ -5,12 +5,17 @@ import json
 import os
 import re
 from datetime import datetime
+import urllib.request
+import urllib.parse
 
 app = Flask(__name__)
-# Secure secret key for signing session cookies
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
+
+# Supabase Configuration from Environment Variables
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 def init_db():
     try:
@@ -33,7 +38,6 @@ def init_db():
 init_db()
 
 def mask_pii(text):
-    """Automatically masks emails, phone numbers, and Indian PAN numbers for clean room safety."""
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
     text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
     text = re.sub(r'[A-Z]{5}[0-9]{4}[A-Z]{1}', '[PAN_REDACTED]', text)
@@ -43,20 +47,36 @@ def mask_pii(text):
 def login():
     error = None
     if request.method == 'POST':
-        username = request.form.get('username', '').strip()
+        email = request.form.get('email', '').strip()
         password = request.form.get('password', '').strip()
         
-        # Simple hardcoded secure admin credential check (can be expanded)
-        if username == 'admin' and password == 'sovereign2026':
-            session['logged_in'] = True
-            session['username'] = username
-            return redirect(url_for('index'))
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            error = "Supabase environment variables are missing on Vercel."
         else:
-            error = 'Invalid credentials. Access denied.'
+            try:
+                auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+                payload = json.dumps({"email": email, "password": password}).encode('utf-8')
+                
+                req = urllib.request.Request(auth_url, data=payload, headers={
+                    'Content-Type': 'application/json',
+                    'apikey': SUPABASE_KEY
+                })
+                
+                with urllib.request.urlopen(req) as response:
+                    data = json.loads(response.read().decode('utf-8'))
+                    if 'access_token' in data:
+                        session['logged_in'] = True
+                        session['user_email'] = email
+                        session['access_token'] = data['access_token']
+                        return redirect(url_for('index'))
+                    else:
+                        error = 'Invalid email or password.'
+            except Exception as e:
+                error = 'Authentication failed. Please check credentials.'
 
     return render_template_string('''
         <!DOCTYPE html>
-        <html lang="en" id="html-root">
+        <html lang="en">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -69,7 +89,7 @@ def login():
                 .title p { margin: 4px 0 20px 0; color: var(--subtext-color); font-size: 13px; text-align: center; }
                 .form-group { margin-bottom: 15px; }
                 label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px; }
-                input[type="text"], input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                input[type="email"], input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
                 .btn-primary:hover { background: #14532d; }
                 .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; text-align: center; }
@@ -80,23 +100,23 @@ def login():
             <div class="container">
                 <div class="title">
                     <h2>SovereignVault AI</h2>
-                    <p>Enterprise Clean Room Authentication</p>
+                    <p>Supabase Enterprise Authentication</p>
                 </div>
                 {% if error %}
                     <div class="error-msg">{{ error }}</div>
                 {% endif %}
                 <form method="POST">
                     <div class="form-group">
-                        <label>Username</label>
-                        <input type="text" name="username" required placeholder="Enter username">
+                        <label>Email Address</label>
+                        <input type="email" name="email" required placeholder="admin@enterprise.com">
                     </div>
                     <div class="form-group">
                         <label>Password</label>
                         <input type="password" name="password" required placeholder="Enter password">
                     </div>
-                    <button type="submit" class="btn-primary">Sign In to Clean Room</button>
+                    <button type="submit" class="btn-primary">Sign In via Supabase</button>
                 </form>
-                <div class="hint">Default Credentials — Username: <b>admin</b> | Password: <b>sovereign2026</b></div>
+                <div class="hint">Use your Supabase dashboard credentials to sign in.</div>
             </div>
         </body>
         </html>
@@ -120,22 +140,8 @@ def index():
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>SovereignVault AI</title>
             <style>
-                :root {
-                    --bg-color: #f4f6f8;
-                    --card-bg: #ffffff;
-                    --text-color: #212529;
-                    --subtext-color: #64748b;
-                    --border-color: #e2e8f0;
-                    --input-bg: #ffffff;
-                }
-                [data-theme="dark"] {
-                    --bg-color: #0d1117;
-                    --card-bg: #161b22;
-                    --text-color: #c9d1d9;
-                    --subtext-color: #8b949e;
-                    --border-color: #30363d;
-                    --input-bg: #0d1117;
-                }
+                :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
+                [data-theme="dark"] { --bg-color: #0d1117; --card-bg: #161b22; --text-color: #c9d1d9; --subtext-color: #8b949e; --border-color: #30363d; --input-bg: #0d1117; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 15px; transition: background 0.3s, color 0.3s; }
                 .container { max-width: 600px; margin: 0 auto; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
                 .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 1px solid var(--border-color); padding-bottom: 15px; margin-bottom: 20px; }
@@ -144,22 +150,17 @@ def index():
                 .header-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
                 .btn-top { background: var(--border-color); border: 1px solid var(--border-color); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 500; color: var(--text-color); cursor: pointer; display: flex; align-items: center; gap: 4px; text-decoration: none; }
                 .btn-logout { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
-                
                 .card { border: 1px solid var(--border-color); border-radius: 8px; padding: 15px; margin-bottom: 15px; background: var(--card-bg); }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
                 .card label { font-size: 13px; font-weight: 600; color: var(--text-color); }
                 .badge-pii { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 3px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-                
                 textarea { width: 100%; height: 95px; background: var(--input-bg); color: var(--text-color); border: 1px solid var(--border-color); border-radius: 6px; padding: 10px; font-family: monospace; font-size: 13px; box-sizing: border-box; resize: vertical; }
-                
                 .file-upload { border: 2px dashed var(--border-color); border-radius: 6px; padding: 12px; text-align: center; margin-top: 10px; background: var(--bg-color); }
                 .file-input-wrapper { display: flex; align-items: center; gap: 8px; justify-content: center; }
                 input[type="text"], input[type="file"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 9px 12px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 13px; }
-                
                 .btn-clear-file { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; border-radius: 6px; padding: 6px 10px; font-size: 12px; font-weight: 600; cursor: pointer; display: none; align-items: center; gap: 4px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 13px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 5px; }
                 .btn-primary:hover { background: #14532d; }
-                
                 .result-display { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 220px; overflow-y: auto; margin-bottom: 10px; }
                 .btn-group { display: flex; gap: 10px; }
                 .btn-secondary { background: var(--border-color); color: var(--text-color); border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
@@ -379,11 +380,9 @@ def secure_vault():
                 .title h2 { margin: 0; color: #19692c; font-size: 22px; }
                 .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
                 .badge-verified { padding: 4px 10px; border-radius: 12px; font-size: 12px; font-weight: 600; {{ badge_style|safe }} }
-                
                 .card { border: 1px solid #e2e8f0; border-radius: 8px; padding: 15px; margin-bottom: 15px; background: #fff; }
                 .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
                 .card label { font-size: 13px; font-weight: 600; color: #334155; }
-                
                 .result-display { background: #f8fafc; border: 1px solid #cbd5e1; color: #0f172a; padding: 12px; border-radius: 6px; font-family: monospace; font-size: 12px; white-space: pre-wrap; word-break: break-all; max-height: 280px; overflow-y: auto; margin-bottom: 12px; }
                 .btn-group { display: flex; gap: 10px; }
                 .btn-secondary { background: #e2e8f0; color: #334155; border: none; padding: 10px 20px; border-radius: 6px; font-weight: 600; font-size: 13px; cursor: pointer; flex: 1; text-align: center; text-decoration: none; }
