@@ -15,30 +15,8 @@ def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
     response.headers['X-Frame-Options'] = 'DENY'
     response.headers['X-XSS-Protection'] = '1; mode=block'
-    response.headersHere is your complete, updated master Python script for `api/index.py`. 
-
-I have added the missing input validation check right at the start of the `/process` route so that if someone clicks **Execute Clean Room Protocol** with an empty input box and no file attached, it will immediately pop up an error alert and safely redirect them back to the dashboard instead of generating a blank certificate.
-
-```python
-from flask import Flask, render_template_string, request, session, redirect, url_for
-import hashlib
-import json
-import os
-import re
-from datetime import datetime
-
-app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
-
-MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
-
-@app.after_request
-def set_security_headers(response):
-    response.headers['X-Content-Type-Options'] = 'nosniff'
-    response.headers['X-Frame-Options'] = 'DENY'
-    response.headers['X-XSS-Protection'] = '1; mode=block'
     response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
-    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' [https://fonts.googleapis.com](https://fonts.googleapis.com) [https://fonts.gstatic.com](https://fonts.gstatic.com);"
+    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com;"
     return response
 
 def mask_pii(text):
@@ -346,7 +324,6 @@ def process_vault():
         violation_reason = "IT Act Section 43A Violation (Unencrypted credential/secret detected)"
 
     payload_hash = hashlib.sha256(raw_payload.encode()).hexdigest()
-    # Offline air-gapped local vector simulation
     vector_embedding = [round(float(ord(c)) / 255.0, 4) for c in payload_hash[:16]]
     
     if is_violation:
