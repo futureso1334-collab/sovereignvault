@@ -1,24 +1,25 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session, abort
+from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import hashlib
 import json
 import os
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
+import requests
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
 # Session security configurations
-app.config['SESSION_COOKIE_SECURE'] = True  # Enforce HTTPS cookies
-app.config['SESSION_COOKIE_HTTPONLY'] = True # Prevent JS access to cookies
+app.config['SESSION_COOKIE_SECURE'] = True
+app.config['SESSION_COOKIE_HTTPONLY'] = True
 app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
 DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
-MASTER_ACCESS_KEY = os.environ.get('MASTER_ACCESS_KEY', 'sovereign2026')
 
-# Simple in-memory rate limiting dictionary to block brute-force attacks
-login_attempts = {}
+# Supabase REST Configuration
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
 def init_db():
     try:
@@ -40,7 +41,6 @@ def init_db():
 
 init_db()
 
-# Add enterprise security headers to every response to protect against hackers
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -59,43 +59,34 @@ def mask_pii(text):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
-    client_ip = request.remote_addr
-    
-    # Check brute-force rate limit (Max 5 failed attempts per 15 minutes)
-    now = datetime.utcnow()
-    if client_ip in login_attempts:
-        attempts, lockout_time = login_attempts[client_ip]
-        if attempts >= 5 and now < lockout_time:
-            remaining = int((lockout_time - now).total_seconds() / 60)
-            return render_template_string('''
-                <!DOCTYPE html>
-                <html lang="en">
-                <head><title>Locked Out</title></head>
-                <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f6f8;">
-                    <div style="max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0;">
-                        <h2 style="color: #991b1b;">⚠️ Access Temporarily Blocked</h2>
-                        <p style="font-size: 14px; color: #64748b;">Too many failed login attempts from your IP. To protect against brute-force attacks, access is locked for another ~{{ remaining }} minutes.</p>
-                    </div>
-                </body>
-                </html>
-            ''', remaining=max(1, remaining))
-
     if request.method == 'POST':
-        passcode = request.form.get('passcode', '').strip()
-        if passcode == MASTER_ACCESS_KEY:
-            if client_ip in login_attempts:
-                del login_attempts[client_ip]
-            session['logged_in'] = True
-            session.permanent = True
-            return redirect(url_for('index'))
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '').strip()
+        
+        if not SUPABASE_URL or not SUPABASE_KEY:
+            error = 'Supabase credentials are not configured on this server.'
         else:
-            # Increment failed attempts for this IP
-            if client_ip in login_attempts:
-                attempts, _ = login_attempts[client_ip]
-                login_attempts[client_ip] = (attempts + 1, now + timedelta(minutes=15))
-            else:
-                login_attempts[client_ip] = (1, now + timedelta(minutes=15))
-            error = 'Invalid Master Access Key. Unauthorized attempt logged.'
+            try:
+                auth_url = f"{SUPABASE_URL}/auth/v1/token?grant_type=password"
+                headers = {
+                    "apikey": SUPABASE_KEY,
+                    "Content-Type": "application/json"
+                }
+                payload = {
+                    "email": email,
+                    "password": password
+                }
+                
+                response = requests.post(auth_url, json=payload, headers=headers)
+                if response.status_code == 200:
+                    session['logged_in'] = True
+                    session['user_email'] = email
+                    session.permanent = True
+                    return redirect(url_for('index'))
+                else:
+                    error = 'Invalid email or password. Authentication failed.'
+            except Exception as e:
+                error = f'Connection error: {str(e)}'
 
     return render_template_string('''
         <!DOCTYPE html>
@@ -103,7 +94,7 @@ def login():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Secure Gateway - SovereignVault AI</title>
+            <title>Supabase Login - SovereignVault AI</title>
             <style>
                 :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
@@ -112,7 +103,7 @@ def login():
                 .title p { margin: 4px 0 20px 0; color: var(--subtext-color); font-size: 13px; text-align: center; }
                 .form-group { margin-bottom: 15px; }
                 label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 5px; }
-                input[type="password"] { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
+                input { width: 100%; background: var(--input-bg); color: var(--text-color); padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; box-sizing: border-box; font-size: 14px; }
                 .btn-primary { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; margin-top: 10px; }
                 .btn-primary:hover { background: #14532d; }
                 .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 10px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; text-align: center; }
@@ -123,19 +114,23 @@ def login():
             <div class="container">
                 <div class="title">
                     <h2>SovereignVault AI</h2>
-                    <p>Protected Anti-Hack Gateway</p>
+                    <p>Secured via Supabase Auth</p>
                 </div>
                 {% if error %}
                     <div class="error-msg">{{ error }}</div>
                 {% endif %}
                 <form method="POST">
                     <div class="form-group">
-                        <label>Master Access Passcode</label>
-                        <input type="password" name="passcode" required placeholder="Enter secure key">
+                        <label>Email Address</label>
+                        <input type="email" name="email" required placeholder="admin@enterprise.com">
                     </div>
-                    <button type="submit" class="btn-primary">Authenticate Securely</button>
+                    <div class="form-group">
+                        <label>Password</label>
+                        <input type="password" name="password" required placeholder="••••••••">
+                    </div>
+                    <button type="submit" class="btn-primary">Sign In with Supabase</button>
                 </form>
-                <div class="hint">Shielded with CSP, HSTS, and Brute-Force Rate Limiting.</div>
+                <div class="hint">Enterprise Identity Management Enabled.</div>
             </div>
         </body>
         </html>
