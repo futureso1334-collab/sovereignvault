@@ -1,18 +1,24 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
+from flask import Flask, render_template_string, request, redirect, url_for, session, abort
 import sqlite3
 import hashlib
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
 
-DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
+# Session security configurations
+app.config['SESSION_COOKIE_SECURE'] = True  # Enforce HTTPS cookies
+app.config['SESSION_COOKIE_HTTPONLY'] = True # Prevent JS access to cookies
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
 
-# Secure Master Access Key to prevent unauthorized access/tampering
+DB_PATH = os.path.join('/tmp', 'sovereign_audit.db')
 MASTER_ACCESS_KEY = os.environ.get('MASTER_ACCESS_KEY', 'sovereign2026')
+
+# Simple in-memory rate limiting dictionary to block brute-force attacks
+login_attempts = {}
 
 def init_db():
     try:
@@ -34,6 +40,16 @@ def init_db():
 
 init_db()
 
+# Add enterprise security headers to every response to protect against hackers
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    response.headers['Content-Security-Policy'] = "default-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://fonts.gstatic.com;"
+    return response
+
 def mask_pii(text):
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
     text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
@@ -43,13 +59,43 @@ def mask_pii(text):
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
+    client_ip = request.remote_addr
+    
+    # Check brute-force rate limit (Max 5 failed attempts per 15 minutes)
+    now = datetime.utcnow()
+    if client_ip in login_attempts:
+        attempts, lockout_time = login_attempts[client_ip]
+        if attempts >= 5 and now < lockout_time:
+            remaining = int((lockout_time - now).total_seconds() / 60)
+            return render_template_string('''
+                <!DOCTYPE html>
+                <html lang="en">
+                <head><title>Locked Out</title></head>
+                <body style="font-family: sans-serif; text-align: center; padding-top: 50px; background: #f4f6f8;">
+                    <div style="max-width: 400px; margin: 0 auto; background: white; padding: 30px; border-radius: 12px; border: 1px solid #e2e8f0;">
+                        <h2 style="color: #991b1b;">⚠️ Access Temporarily Blocked</h2>
+                        <p style="font-size: 14px; color: #64748b;">Too many failed login attempts from your IP. To protect against brute-force attacks, access is locked for another ~{{ remaining }} minutes.</p>
+                    </div>
+                </body>
+                </html>
+            ''', remaining=max(1, remaining))
+
     if request.method == 'POST':
         passcode = request.form.get('passcode', '').strip()
         if passcode == MASTER_ACCESS_KEY:
+            if client_ip in login_attempts:
+                del login_attempts[client_ip]
             session['logged_in'] = True
+            session.permanent = True
             return redirect(url_for('index'))
         else:
-            error = 'Invalid Master Access Key. Unauthorized access blocked.'
+            # Increment failed attempts for this IP
+            if client_ip in login_attempts:
+                attempts, _ = login_attempts[client_ip]
+                login_attempts[client_ip] = (attempts + 1, now + timedelta(minutes=15))
+            else:
+                login_attempts[client_ip] = (1, now + timedelta(minutes=15))
+            error = 'Invalid Master Access Key. Unauthorized attempt logged.'
 
     return render_template_string('''
         <!DOCTYPE html>
@@ -57,7 +103,7 @@ def login():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Access Control - SovereignVault AI</title>
+            <title>Secure Gateway - SovereignVault AI</title>
             <style>
                 :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
@@ -77,7 +123,7 @@ def login():
             <div class="container">
                 <div class="title">
                     <h2>SovereignVault AI</h2>
-                    <p>Secure Anti-Tamper Gateway</p>
+                    <p>Protected Anti-Hack Gateway</p>
                 </div>
                 {% if error %}
                     <div class="error-msg">{{ error }}</div>
@@ -85,11 +131,11 @@ def login():
                 <form method="POST">
                     <div class="form-group">
                         <label>Master Access Passcode</label>
-                        <input type="password" name="passcode" required placeholder="Enter master key">
+                        <input type="password" name="passcode" required placeholder="Enter secure key">
                     </div>
-                    <button type="submit" class="btn-primary">Unlock SovereignVault</button>
+                    <button type="submit" class="btn-primary">Authenticate Securely</button>
                 </form>
-                <div class="hint">Protected against unauthorized access and tampering.</div>
+                <div class="hint">Shielded with CSP, HSTS, and Brute-Force Rate Limiting.</div>
             </div>
         </body>
         </html>
@@ -111,7 +157,7 @@ def index():
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>SovereignVault AI</title>
+            <title>SovereignVault AI - Secure Dashboard</title>
             <style>
                 :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
                 [data-theme="dark"] { --bg-color: #0d1117; --card-bg: #161b22; --text-color: #c9d1d9; --subtext-color: #8b949e; --border-color: #30363d; --input-bg: #0d1117; }
@@ -145,7 +191,7 @@ def index():
                 <div class="header">
                     <div class="title">
                         <h2>SovereignVault AI</h2>
-                        <p>Enterprise Clean Room & Audit Ledger</p>
+                        <p>Secured Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
                         <a href="/audit-logs" class="btn-top">📄 Logs</a>
