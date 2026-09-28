@@ -1,4 +1,4 @@
-from flask import Flask, render_template_string, request, session, redirect, url_for
+from flask import Flask, render_template_string, request, session, redirect, url_for, Response
 import hashlib
 import json
 import os
@@ -10,6 +10,9 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
+# ---- SEO: change this to your real deployed domain ----
+SITE_URL = os.environ.get('SITE_URL', 'https://example.com')
+
 @app.after_request
 def set_security_headers(response):
     response.headers['X-Content-Type-Options'] = 'nosniff'
@@ -20,13 +23,39 @@ def set_security_headers(response):
     return response
 
 def mask_pii(text):
-    # Standard PII & Indian PII Moat (PAN, Aadhaar, GSTIN, Email, Phone)
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
     text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
     text = re.sub(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b', '[PAN_REDACTED]', text)
     text = re.sub(r'\b\d{4}\s\d{4}\s\d{4}\b|\b\d{12}\b', '[AADHAAR_REDACTED]', text)
     text = re.sub(r'\b\d{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', '[GSTIN_REDACTED]', text)
     return text
+
+# ---- SEO: robots.txt ----
+@app.route('/robots.txt')
+def robots_txt():
+    lines = [
+        "User-agent: *",
+        "Allow: /$",
+        "Disallow: /dashboard",
+        "Disallow: /logs",
+        "Disallow: /process",
+        "Disallow: /logout",
+        f"Sitemap: {SITE_URL}/sitemap.xml",
+    ]
+    return Response("\n".join(lines), mimetype='text/plain')
+
+# ---- SEO: sitemap.xml (only the public page belongs here) ----
+@app.route('/sitemap.xml')
+def sitemap_xml():
+    xml = f'''<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>{SITE_URL}/</loc>
+    <changefreq>monthly</changefreq>
+    <priority>1.0</priority>
+  </url>
+</urlset>'''
+    return Response(xml, mimetype='application/xml')
 
 @app.route('/', methods=['GET', 'POST'])
 def index():
@@ -46,7 +75,39 @@ def index():
             <head>
                 <meta charset="UTF-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-                <title>SovereignVault AI - Gateway</title>
+
+                <!-- ===== SEO TAGS (public gateway page only) ===== -->
+                <title>SovereignVault AI | Secure Indian Data Compliance & PII Redaction Gateway</title>
+                <meta name="description" content="SovereignVault AI is a secure clean-room gateway for Indian regulatory compliance — PAN, Aadhaar, GSTIN and PII redaction, RBI localization, IT Act 43A and DPDP Act guardrails.">
+                <meta name="keywords" content="PII redaction, DPDP Act compliance, RBI data localization, IT Act 43A, Aadhaar masking, PAN masking, GSTIN masking, data clean room, India data privacy">
+                <meta name="robots" content="index, follow">
+                <link rel="canonical" href="{{ site_url }}/">
+
+                <!-- Open Graph -->
+                <meta property="og:type" content="website">
+                <meta property="og:title" content="SovereignVault AI | Secure Indian Data Compliance Gateway">
+                <meta property="og:description" content="Air-gapped clean-room protocol for Indian PII redaction and regulatory compliance (RBI, IT Act, DPDP Act).">
+                <meta property="og:url" content="{{ site_url }}/">
+                <meta property="og:site_name" content="SovereignVault AI">
+
+                <!-- Twitter Card -->
+                <meta name="twitter:card" content="summary">
+                <meta name="twitter:title" content="SovereignVault AI | Secure Indian Data Compliance Gateway">
+                <meta name="twitter:description" content="Air-gapped clean-room protocol for Indian PII redaction and regulatory compliance (RBI, IT Act, DPDP Act).">
+
+                <!-- Structured data -->
+                <script type="application/ld+json">
+                {
+                  "@context": "https://schema.org",
+                  "@type": "SoftwareApplication",
+                  "name": "SovereignVault AI",
+                  "applicationCategory": "SecurityApplication",
+                  "operatingSystem": "Web",
+                  "description": "Secure clean-room gateway for Indian regulatory data compliance and PII redaction."
+                }
+                </script>
+                <!-- ===== END SEO TAGS ===== -->
+
                 <style>
                     :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; }
                     body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); color: var(--text-color); margin: 0; padding: 20px; display: flex; justify-content: center; align-items: center; height: 100vh; box-sizing: border-box; }
@@ -64,7 +125,7 @@ def index():
             <body>
                 <div class="container">
                     <div class="title">
-                        <h2>SovereignVault AI</h2>
+                        <h1 style="font-size:24px;margin:0;color:#19692c;">SovereignVault AI</h1>
                         <p>Protected Anti-Hack Gateway</p>
                     </div>
                     {% if error %}
@@ -81,7 +142,7 @@ def index():
                 </div>
             </body>
             </html>
-        ''', error=error)
+        ''', error=error, site_url=SITE_URL)
 
     return redirect(url_for('dashboard'))
 
@@ -97,6 +158,7 @@ def dashboard():
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>SovereignVault AI - Secure Dashboard</title>
+            <meta name="robots" content="noindex, nofollow, noarchive">
             <style>
                 :root { --bg-color: #f4f6f8; --card-bg: #ffffff; --text-color: #212529; --subtext-color: #64748b; --border-color: #e2e8f0; --input-bg: #ffffff; }
                 [data-theme="dark"] { --bg-color: #0d1117; --card-bg: #161b22; --text-color: #c9d1d9; --subtext-color: #8b949e; --border-color: #30363d; --input-bg: #0d1117; }
@@ -216,6 +278,7 @@ def logs():
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>SovereignVault AI - Audit Logs</title>
+            <meta name="robots" content="noindex, nofollow, noarchive">
             <style>
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }
                 .container { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
@@ -295,7 +358,6 @@ def process_vault():
     else:
         raw_payload = request.form.get('payload', '').strip()
 
-    # Block empty inputs
     if not raw_payload:
         return render_template_string('''
             <script>
@@ -359,6 +421,7 @@ def process_vault():
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>SovereignVault AI - Compliance Certificate</title>
+            <meta name="robots" content="noindex, nofollow, noarchive">
             <style>
                 body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f6f8; color: #212529; margin: 0; padding: 15px; }
                 .container { max-width: 600px; margin: 0 auto; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px; box-shadow: 0 4px 6px rgba(0,0,0,0.02); }
