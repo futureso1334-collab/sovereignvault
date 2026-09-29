@@ -3,7 +3,8 @@ import hashlib
 import json
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timezone
+from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
@@ -11,6 +12,13 @@ app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
 SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app')
+
+SUPABASE_URL = os.environ.get('SUPABASE_URL')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+
+supabase: Client = None
+if SUPABASE_URL and SUPABASE_KEY:
+    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 @app.after_request
 def set_security_headers(response):
@@ -275,6 +283,15 @@ def logs():
     if not session.get('authenticated'):
         return redirect(url_for('index'))
 
+    log_rows = []
+    fetch_error = None
+    if supabase:
+        try:
+            result = supabase.table('audit_logs').select('*').order('id', desc=True).limit(50).execute()
+            log_rows = result.data or []
+        except Exception as e:
+            fetch_error = str(e)
+
     return render_template_string('''
         <!DOCTYPE html>
         <html lang="en">
@@ -291,7 +308,8 @@ def logs():
                 .title p { margin: 4px 0 0 0; color: #64748b; font-size: 13px; }
                 .log-item { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; margin-bottom: 10px; font-size: 12px; font-family: monospace; word-break: break-all; }
                 .btn-back { background: #19692c; color: white; border: none; width: 100%; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px; cursor: pointer; text-align: center; text-decoration: none; display: block; box-sizing: border-box; margin-top: 15px; }
-                .btn-clear { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; padding: 6px 10px; border-radius: 6px; font-size: 11px; cursor: pointer; font-weight: 600; }
+                .error-msg { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; padding: 8px; border-radius: 6px; font-size: 12px; margin-bottom: 15px; }
+                .empty-msg { text-align: center; color: #64748b; font-size: 13px; }
             </style>
         </head>
         <body>
@@ -299,52 +317,29 @@ def logs():
                 <div class="header">
                     <div class="title">
                         <h2>Audit Ledger</h2>
-                        <p>Historical Clean Room Executions</p>
+                        <p>Powered by Supabase</p>
                     </div>
-                    <button class="btn-clear" onclick="clearLogs()">Clear Logs</button>
                 </div>
-                <div id="logs-container">
-                    <p style="text-align: center; color: #64748b; font-size: 13px;">Loading logs...</p>
-                </div>
+
+                {% if fetch_error %}
+                    <div class="error-msg">Could not load logs from Supabase: {{ fetch_error }}</div>
+                {% elif not log_rows %}
+                    <p class="empty-msg">No audit logs recorded yet.</p>
+                {% else %}
+                    {% for log in log_rows %}
+                        <div class="log-item">
+                            <b>Time:</b> {{ log.get('timestamp', 'N/A') }}<br>
+                            <b>Status:</b> {{ log.get('status', 'N/A') }}<br>
+                            <b>SHA256:</b> {{ (log.get('checksum') or '')[:16] }}...
+                        </div>
+                    {% endfor %}
+                {% endif %}
+
                 <a href="/dashboard" class="btn-back">&larr; Back to Dashboard</a>
             </div>
-
-            <script>
-                function loadLogs() {
-                    const logsContainer = document.getElementById('logs-container');
-                    const savedLogs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
-                    
-                    if (savedLogs.length === 0) {
-                        logsContainer.innerHTML = '<p style="text-align: center; color: #64748b; font-size: 13px;">No audit logs recorded yet.</p>';
-                        return;
-                    }
-
-                    let html = '';
-                    savedLogs.forEach(log => {
-                        html += `
-                            <div class="log-item">
-                                <b>Time:</b> ${log.timestamp}<br>
-                                <b>Status:</b> ${log.status}<br>
-                                <b>Rule:</b> ${log.active_rule}<br>
-                                <b>SHA256:</b> ${log.checksum_sha256.substring(0, 16)}...
-                            </div>
-                        `;
-                    });
-                    logsContainer.innerHTML = html;
-                }
-
-                function clearLogs() {
-                    if (confirm('Are you sure you want to clear all audit logs?')) {
-                        localStorage.removeItem('sovereign_audit_logs');
-                        loadLogs();
-                    }
-                }
-
-                loadLogs();
-            </script>
         </body>
         </html>
-    ''')
+    ''', log_rows=log_rows, fetch_error=fetch_error)
 
 @app.route('/logout')
 def logout():
@@ -377,7 +372,7 @@ def process_vault():
     it_active = request.form.get('it_act') == 'active'
     dpdp_active = request.form.get('dpdp_act') == 'active'
 
-    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    timestamp = datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M:%S')
     
     is_violation = False
     violation_reason = ""
@@ -415,7 +410,18 @@ def process_vault():
         "sanitized_content": "[BLOCKED DUE TO POLICY VIOLATION]" if is_violation else sanitized_payload,
         "vector_embedding": vector_embedding if not is_violation else []
     }
-    
+
+    if supabase:
+        try:
+            supabase.table('audit_logs').insert({
+                "timestamp": timestamp,
+                "status": status_text,
+                "checksum": payload_hash,
+                "sanitized_content": response_data["sanitized_content"]
+            }).execute()
+        except Exception:
+            pass  # Don't break the certificate view if Supabase insert fails
+
     pretty_json = json.dumps(response_data, indent=4)
 
     return render_template_string('''
@@ -470,16 +476,6 @@ def process_vault():
             </div>
 
             <script>
-                const newLog = {
-                    timestamp: "{{ response_data.timestamp }}",
-                    status: "{{ response_data.status }}",
-                    active_rule: "{{ response_data.active_rule }}",
-                    checksum_sha256: "{{ response_data.checksum_sha256 }}"
-                };
-                let existingLogs = JSON.parse(localStorage.getItem('sovereign_audit_logs') || '[]');
-                existingLogs.unshift(newLog);
-                localStorage.setItem('sovereign_audit_logs', JSON.stringify(existingLogs));
-
                 function copyResult() {
                     navigator.clipboard.writeText(document.getElementById('result-content').innerText);
                     alert('Certificate telemetry copied to clipboard!');
