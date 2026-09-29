@@ -3,8 +3,8 @@ import hashlib
 import json
 import os
 import re
+import requests
 from datetime import datetime, timezone
-from supabase import create_client, Client
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
@@ -13,12 +13,48 @@ MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
 
 SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app')
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
 
-supabase: Client = None
-if SUPABASE_URL and SUPABASE_KEY:
-    supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+def supabase_headers(prefer=None):
+    headers = {
+        "apikey": SUPABASE_KEY,
+        "Authorization": f"Bearer {SUPABASE_KEY}",
+        "Content-Type": "application/json"
+    }
+    if prefer:
+        headers["Prefer"] = prefer
+    return headers
+
+def supabase_insert_log(row):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        requests.post(
+            f"{SUPABASE_URL}/rest/v1/audit_logs",
+            headers=supabase_headers(prefer="return=minimal"),
+            json=row,
+            timeout=5
+        )
+    except Exception:
+        pass  # Never break the certificate view if logging fails
+
+def supabase_fetch_logs(limit=50):
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return [], "Supabase is not configured."
+    try:
+        resp = requests.get(
+            f"{SUPABASE_URL}/rest/v1/audit_logs",
+            headers=supabase_headers(),
+            params={"select": "*", "order": "id.desc", "limit": limit},
+            timeout=5
+        )
+        if resp.status_code == 200:
+            return resp.json(), None
+        else:
+            return [], f"Supabase returned {resp.status_code}: {resp.text[:200]}"
+    except Exception as e:
+        return [], str(e)
 
 @app.after_request
 def set_security_headers(response):
@@ -283,14 +319,7 @@ def logs():
     if not session.get('authenticated'):
         return redirect(url_for('index'))
 
-    log_rows = []
-    fetch_error = None
-    if supabase:
-        try:
-            result = supabase.table('audit_logs').select('*').order('id', desc=True).limit(50).execute()
-            log_rows = result.data or []
-        except Exception as e:
-            fetch_error = str(e)
+    log_rows, fetch_error = supabase_fetch_logs()
 
     return render_template_string('''
         <!DOCTYPE html>
@@ -322,7 +351,7 @@ def logs():
                 </div>
 
                 {% if fetch_error %}
-                    <div class="error-msg">Could not load logs from Supabase: {{ fetch_error }}</div>
+                    <div class="error-msg">Could not load logs: {{ fetch_error }}</div>
                 {% elif not log_rows %}
                     <p class="empty-msg">No audit logs recorded yet.</p>
                 {% else %}
@@ -411,16 +440,12 @@ def process_vault():
         "vector_embedding": vector_embedding if not is_violation else []
     }
 
-    if supabase:
-        try:
-            supabase.table('audit_logs').insert({
-                "timestamp": timestamp,
-                "status": status_text,
-                "checksum": payload_hash,
-                "sanitized_content": response_data["sanitized_content"]
-            }).execute()
-        except Exception:
-            pass  # Don't break the certificate view if Supabase insert fails
+    supabase_insert_log({
+        "timestamp": timestamp,
+        "status": status_text,
+        "checksum": payload_hash,
+        "sanitized_content": response_data["sanitized_content"]
+    })
 
     pretty_json = json.dumps(response_data, indent=4)
 
