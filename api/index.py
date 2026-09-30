@@ -4,8 +4,9 @@ import hmac
 import json
 import os
 import re
+import time
 import requests
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026').strip()
@@ -23,6 +24,11 @@ SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app').
 SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip()
 
+# ---------- Login rate limiting ----------
+LOGIN_MAX_ATTEMPTS = 5
+LOGIN_WINDOW_MINUTES = 15
+_local_attempts = {}  # fallback only, used if Supabase is unreachable
+
 def supabase_headers(prefer=None):
     headers = {
         "apikey": SUPABASE_KEY,
@@ -32,6 +38,71 @@ def supabase_headers(prefer=None):
     if prefer:
         headers["Prefer"] = prefer
     return headers
+
+def get_client_ip():
+    forwarded = request.headers.get('X-Forwarded-For', '')
+    if forwarded:
+        return forwarded.split(',')[0].strip()
+    return request.remote_addr or 'unknown'
+
+def _window_start_iso():
+    return (datetime.now(timezone.utc) - timedelta(minutes=LOGIN_WINDOW_MINUTES)).isoformat()
+
+def is_rate_limited(ip):
+    if SUPABASE_URL and SUPABASE_KEY:
+        try:
+            resp = requests.get(
+                f"{SUPABASE_URL}/rest/v1/login_attempts",
+                headers=supabase_headers(),
+                params={
+                    "select": "id",
+                    "ip": f"eq.{ip}",
+                    "attempted_at": f"gte.{_window_start_iso()}",
+                    "limit": LOGIN_MAX_ATTEMPTS
+                },
+                timeout=5
+            )
+            if resp.status_code == 200:
+                return len(resp.json()) >= LOGIN_MAX_ATTEMPTS
+            print(f"Rate limit check failed {resp.status_code}: {resp.text[:200]}")
+        except Exception as e:
+            print(f"Rate limit check error: {e}")
+    # Fallback: in-memory counter (per server instance)
+    now = time.time()
+    window = LOGIN_WINDOW_MINUTES * 60
+    attempts = [t for t in _local_attempts.get(ip, []) if now - t < window]
+    _local_attempts[ip] = attempts
+    return len(attempts) >= LOGIN_MAX_ATTEMPTS
+
+def record_failed_attempt(ip):
+    _local_attempts.setdefault(ip, []).append(time.time())
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        resp = requests.post(
+            f"{SUPABASE_URL}/rest/v1/login_attempts",
+            headers=supabase_headers(prefer="return=minimal"),
+            json={"ip": ip},
+            timeout=5
+        )
+        if resp.status_code >= 300:
+            print(f"Recording failed attempt failed {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"Recording failed attempt error: {e}")
+
+def clear_attempts(ip):
+    _local_attempts.pop(ip, None)
+    if not SUPABASE_URL or not SUPABASE_KEY:
+        return
+    try:
+        requests.delete(
+            f"{SUPABASE_URL}/rest/v1/login_attempts",
+            headers=supabase_headers(),
+            params={"ip": f"eq.{ip}"},
+            timeout=5
+        )
+    except Exception as e:
+        print(f"Clearing attempts error: {e}")
 
 def supabase_insert_log(row):
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -117,13 +188,21 @@ def sitemap_xml():
 @app.route('/', methods=['GET', 'POST'])
 def index():
     error = None
+    status_code = 200
     if request.method == 'POST':
-        passcode = request.form.get('passcode', '')
-        if hmac.compare_digest(passcode.encode(), MASTER_PASSCODE.encode()):
-            session['authenticated'] = True
-            return redirect(url_for('dashboard'))
+        ip = get_client_ip()
+        if is_rate_limited(ip):
+            error = f'Too many failed attempts. Try again in {LOGIN_WINDOW_MINUTES} minutes.'
+            status_code = 429
         else:
-            error = 'Invalid Master Access Passcode.'
+            passcode = request.form.get('passcode', '')
+            if hmac.compare_digest(passcode.encode(), MASTER_PASSCODE.encode()):
+                clear_attempts(ip)
+                session['authenticated'] = True
+                return redirect(url_for('dashboard'))
+            else:
+                record_failed_attempt(ip)
+                error = 'Invalid Master Access Passcode.'
 
     if not session.get('authenticated'):
         return render_template_string('''
@@ -199,7 +278,7 @@ def index():
                 </div>
             </body>
             </html>
-        ''', error=error, site_url=SITE_URL)
+        ''', error=error, site_url=SITE_URL), status_code
 
     return redirect(url_for('dashboard'))
 
