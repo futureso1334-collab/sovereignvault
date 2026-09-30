@@ -7,14 +7,14 @@ import requests
 from datetime import datetime, timezone
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026')
+app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026').strip()
 
-MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123')
+MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123').strip()
 
-SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app')
+SITE_URL = os.environ.get('SITE_URL', 'https://sovereignvault-gkvw.vercel.app').strip().rstrip('/')
 
-SUPABASE_URL = os.environ.get('SUPABASE_URL', '').rstrip('/')
-SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '')
+SUPABASE_URL = os.environ.get('SUPABASE_URL', '').strip().rstrip('/')
+SUPABASE_KEY = os.environ.get('SUPABASE_KEY', '').strip()
 
 def supabase_headers(prefer=None):
     headers = {
