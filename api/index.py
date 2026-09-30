@@ -173,7 +173,7 @@ def index():
             <body>
                 <div class="container">
                     <div class="title">
-                        <h1 style="font-size:24px;margin:0;color:#19692c;"><img src="/static/logo.png" alt="SovereignVault AI Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">SovereignVault AI</h1>
+                        <h1 style="font-size:24px;margin:0;color:#19692c;">SovereignVault AI</h1>
                         <p>Protected Anti-Hack Gateway</p>
                     </div>
                     {% if error %}
@@ -237,7 +237,7 @@ def dashboard():
             <div class="container">
                 <div class="header">
                     <div class="title">
-                        <h2><img src="/static/logo.png" alt="SovereignVault AI Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">SovereignVault AI</h2>
+                        <h2>SovereignVault AI</h2>
                         <p>Secured Clean Room & Audit Ledger</p>
                     </div>
                     <div class="header-actions">
@@ -345,7 +345,7 @@ def logs():
             <div class="container">
                 <div class="header">
                     <div class="title">
-                        <h2><img src="/static/logo.png" alt="SovereignVault AI Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">Audit Ledger</h2>
+                        <h2>Audit Ledger</h2>
                         <p>Powered by Supabase</p>
                     </div>
                 </div>
@@ -479,7 +479,7 @@ def process_vault():
             <div class="container">
                 <div class="header">
                     <div class="title">
-                        <h2><img src="/static/logo.png" alt="SovereignVault AI Logo" style="height: 40px; vertical-align: middle; margin-right: 8px;">Compliance Audit Certificate</h2>
+                        <h2>Compliance Audit Certificate</h2>
                         <p>Air-Gapped Indian Regulatory Framework</p>
                     </div>
                     <div class="badge-verified">{{ badge_text }}</div>
