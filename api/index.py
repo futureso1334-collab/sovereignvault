@@ -1,5 +1,6 @@
 from flask import Flask, render_template_string, request, session, redirect, url_for, Response
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -8,6 +9,12 @@ from datetime import datetime, timezone
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'sovereign-vault-super-secret-key-2026').strip()
+app.config.update(
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE='Lax',
+    MAX_CONTENT_LENGTH=2 * 1024 * 1024  # 2 MB upload limit
+)
 
 MASTER_PASSCODE = os.environ.get('MASTER_PASSCODE', 'admin123').strip()
 
@@ -30,14 +37,16 @@ def supabase_insert_log(row):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
     try:
-        requests.post(
+        resp = requests.post(
             f"{SUPABASE_URL}/rest/v1/audit_logs",
             headers=supabase_headers(prefer="return=minimal"),
             json=row,
             timeout=5
         )
-    except Exception:
-        pass  # Never break the certificate view if logging fails
+        if resp.status_code >= 300:
+            print(f"Supabase insert failed {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        print(f"Supabase insert error: {e}")  # Never break the certificate view if logging fails
 
 def supabase_fetch_logs(limit=50):
     if not SUPABASE_URL or not SUPABASE_KEY:
@@ -67,10 +76,10 @@ def set_security_headers(response):
 
 def mask_pii(text):
     text = re.sub(r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL_REDACTED]', text)
-    text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
+    text = re.sub(r'\b\d{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', '[GSTIN_REDACTED]', text)
     text = re.sub(r'\b[A-Z]{5}[0-9]{4}[A-Z]{1}\b', '[PAN_REDACTED]', text)
     text = re.sub(r'\b\d{4}\s\d{4}\s\d{4}\b|\b\d{12}\b', '[AADHAAR_REDACTED]', text)
-    text = re.sub(r'\b\d{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}\b', '[GSTIN_REDACTED]', text)
+    text = re.sub(r'(?:\+91|91)?[6-9]\d{9}', '[PHONE_REDACTED]', text)
     return text
 
 @app.route('/google844ca2efb192a5e1.html')
@@ -110,7 +119,7 @@ def index():
     error = None
     if request.method == 'POST':
         passcode = request.form.get('passcode', '')
-        if passcode == MASTER_PASSCODE:
+        if hmac.compare_digest(passcode.encode(), MASTER_PASSCODE.encode()):
             session['authenticated'] = True
             return redirect(url_for('dashboard'))
         else:
@@ -431,9 +440,9 @@ def process_vault():
         "status": status_text,
         "active_rule": rule if rule else "None",
         "regulatory_guards": {
-            "rbi_localization": "Enforced",
-            "it_act_43a": "Enforced",
-            "dpdp_act": "Enforced"
+            "rbi_localization": "Enforced" if rbi_active else "Disabled",
+            "it_act_43a": "Enforced" if it_active else "Disabled",
+            "dpdp_act": "Enforced" if dpdp_active else "Disabled"
         },
         "checksum_sha256": payload_hash,
         "sanitized_content": "[BLOCKED DUE TO POLICY VIOLATION]" if is_violation else sanitized_payload,
